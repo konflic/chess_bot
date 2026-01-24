@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import asyncio
 import re
+from configuration import BOT_NAME
 
 
 class ChessGameManager:
@@ -256,7 +257,7 @@ class ChessBot:
         invite_message = (
             f"New game created!\n"
             f"Game ID: {game_id}\n"
-            f"Invite link: https://t.me/your_bot_username?start={invite_link}\n\n"
+            f"Invite link: https://t.me/{}?start={invite_link}\n\n"
             f"Send this link to someone to play against them!"
         )
         await update.message.reply_text(invite_message)

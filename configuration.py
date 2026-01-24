@@ -1,0 +1,1 @@
+BOT_NAME = "chezz_game_bot"
