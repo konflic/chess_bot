@@ -257,7 +257,7 @@ class ChessBot:
         invite_message = (
             f"New game created!\n"
             f"Game ID: {game_id}\n"
-            f"Invite link: https://t.me/{}?start={invite_link}\n\n"
+            f"Invite link: https://t.me/{BOT_NAME}?start={invite_link}\n\n"
             f"Send this link to someone to play against them!"
         )
         await update.message.reply_text(invite_message)
