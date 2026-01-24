@@ -44,3 +44,6 @@ build/
 dist/
 *.egg
 ```
+
+TOKEN
+chess_games.db
