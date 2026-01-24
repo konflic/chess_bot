@@ -1,7 +1,13 @@
+#!/usr/bin/env python3
+"""
+Chess Bot Module
+Separate module containing the ChessBot class and related logic.
+"""
+
 import sqlite3
 import random
 import string
-import chess
+import chess  # This imports the python-chess library (not our file)
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import asyncio
@@ -412,8 +418,3 @@ class ChessBot:
         """Run the bot."""
         print("Starting chess bot...")
         self.application.run_polling()
-
-
-if __name__ == "__main__":
-    bot = ChessBot()
-    bot.run()
