@@ -4,7 +4,7 @@ Telegram Chess Bot - Main entry point
 This file provides a simple interface to run the chess bot.
 """
 
-from chess import ChessBot
+from chess_bot import ChessBot
 
 def main():
     """Main function to run the chess bot."""
