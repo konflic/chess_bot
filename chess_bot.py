@@ -3,7 +3,7 @@
 import sqlite3
 import random
 import string
-import chess  # This imports the python-chess library (not our file)
+import chess
 import chess.svg
 from telegram import Update
 from telegram.ext import (
@@ -15,6 +15,9 @@ from telegram.ext import (
 )
 import re
 import os
+import cairosvg
+import time
+import random
 
 from configuration import BOT_NAME, GAMES_DB
 
@@ -312,15 +315,12 @@ class ChessBot:
                 # Try to join the game
                 game_id, opponent_id = self.game_manager.join_game(invite_link, user.id)
 
+                # Determine if user is white or black
+                game_info = self.game_manager.get_game(game_id)
+                is_white = game_info["player1_id"] == user.id
+                color = "White 🌝" if is_white else "Black 🌚"
+
                 if game_id:
-                    # Get the initial board state
-                    board = chess.Board()
-
-                    # Determine if user is white or black
-                    game_info = self.game_manager.get_game(game_id)
-                    is_white = game_info["player1_id"] == user.id
-                    color = "White ♙" if is_white else "Black ♟"
-
                     with open("start.png", "rb") as f:
                         await update.message.reply_photo(
                             photo=f,
@@ -328,14 +328,18 @@ class ChessBot:
                                 f"✅ Successfully joined game!\n\n"
                                 f"Game ID: `{game_id}`\n"
                                 f"You are: {color}\n\n"
-                                f"{'It\'s your turn!' if is_white else f'Waiting for opponent to move...'}"
+                                + (
+                                    "Its your turn!"
+                                    if is_white
+                                    else "Waiting for opponent to move..."
+                                )
                             ),
                             parse_mode="HTML",
                         )
 
                     # Notify the other player
                     if opponent_id:
-                        is_white = game_info["player2_id"] == user.id
+                        color = "Black 🌚" if is_white else "White 🌝"
                         try:
                             with open("start.png", "rb") as f:
                                 await context.bot.send_photo(
@@ -345,7 +349,11 @@ class ChessBot:
                                         f"✅ {user.username} has joined game!\n\n"
                                         f"Game ID: `{game_id}`\n"
                                         f"You are: {color}\n\n"
-                                        f"{f'It\'s your turn! You are {color}' if is_white else f'Waiting for opponent to move...'}"
+                                        + (
+                                            "Its your turn!"
+                                            if not is_white
+                                            else "Waiting for opponent to move..."
+                                        )
                                     ),
                                     parse_mode="HTML",
                                 )
@@ -530,7 +538,6 @@ class ChessBot:
                 else:
                     winner_name = "You" if result["winner"] == player_id else "Opponent"
                     caption = f"Checkmate! {winner_name} wins!"
-
                 # Delete the finished game
                 self.game_manager.delete_game(game_id)
             else:
@@ -554,7 +561,7 @@ class ChessBot:
             try:
                 # Create another SVG for the opponent
                 opponent_svg_file = self.render_board(board)
-                opponent_caption = f"Your turn! Opponent {update.effective_user.username} played {move_text}"
+                opponent_caption = f"Opponent {update.effective_user.username} played {move_text}\n\nYour turn!"
 
                 with open(opponent_svg_file, "rb") as f:
                     await context.bot.send_photo(
@@ -579,10 +586,6 @@ class ChessBot:
 
     def render_board(self, board, game_id=None):
         """Render the chess board as a PNG image and return file path."""
-        import cairosvg
-        import time
-        import random
-
         timestamp = int(time.time())
         random_suffix = random.randint(1000, 9999)
         filename = f"board_{timestamp}_{random_suffix}.png"
