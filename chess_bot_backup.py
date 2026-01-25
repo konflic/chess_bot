@@ -236,8 +236,7 @@ class ChessBot:
             "Welcome to Telegram Chess!\n\n"
             "Commands:\n"
             "/newgame - Start a new game\n"
-            "/join [link] - Join a game using an invite link\n"\
-            "/current_game - Show your current active game information\n\n"
+            "/join [link] - Join a game using an invite link\n\n"
             "To make moves, simply type the move in algebraic notation (e.g., 'e2e4' or 'Nf3')"
         )
         await update.message.reply_text(welcome_message)
@@ -417,54 +416,6 @@ class ChessBot:
         
         return board_str
     
-    async def current_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show user's current active game information."""
-        player_id = update.effective_user.id
-        
-        # Find the user's active game
-        conn = sqlite3.connect(self.game_manager.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT g.game_id, g.player1_id, g.player2_id, g.created_at
-            FROM games g
-            WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
-        """, (player_id, player_id))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        if not result:
-            await update.message.reply_text("You don't have any active games. Start one with /newgame")
-            return
-        
-        game_id, player1_id, player2_id, created_at = result
-        
-        # Determine opponent ID and get opponent username
-        opponent_id = player2_id if player_id == player1_id else player1_id
-        
-        # Since we don't store usernames in the database, we'll try to get the username from Telegram
-        try:
-            # Get the opponent user info
-            opponent_user = await context.bot.get_chat(opponent_id)
-            opponent_name = opponent_user.username or f"User {opponent_id}"
-        except Exception:
-            # If we can't get the user info from Telegram, just use the ID
-            opponent_name = f"User {opponent_id}"
-        
-        # Format the response
-        game_info_message = (
-            f"Current Active Game:
-"
-            f"ID: {game_id}
-"
-            f"Opponent: {opponent_name}
-"
-            f"Started at: {created_at}"
-        )
-        
-        await update.message.reply_text(game_info_message)
-
     def run(self):
         """Run the bot."""
         print("Starting chess bot...")
