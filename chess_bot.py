@@ -14,6 +14,7 @@ from telegram.ext import (
     ContextTypes,
 )
 import re
+import os
 
 from configuration import BOT_NAME, GAMES_DB
 
@@ -303,8 +304,8 @@ class ChessBot:
                     await update.message.reply_text(
                         f"⚠️ You're already in an active game!\n"
                         f"Game ID: `{active_game[0]}`\n"
-                        f"Use /current_game to see details.",
-                        parse_mode="Markdown",
+                        f"Use /current_game to see details\nor /leade to leave the game.",
+                        parse_mode="HTML",
                     )
                     return
 
@@ -320,25 +321,34 @@ class ChessBot:
                     is_white = game_info["player1_id"] == user.id
                     color = "White ♙" if is_white else "Black ♟"
 
-                    await update.message.reply_text(
-                        f"✅ Successfully joined game!\n\n"
-                        f"Game ID: `{game_id}`\n"
-                        f"You are: {color}\n\n"
-                        f"{self.render_board(board)}\n\n"
-                        f"{'It\'s your turn!' if is_white else 'Waiting for white to move...'}",
-                        parse_mode="Markdown",
-                    )
+                    with open("start.png", "rb") as f:
+                        await update.message.reply_photo(
+                            photo=f,
+                            caption=(
+                                f"✅ Successfully joined game!\n\n"
+                                f"Game ID: `{game_id}`\n"
+                                f"You are: {color}\n\n"
+                                f"{'It\'s your turn!' if is_white else f'Waiting for opponent to move...'}"
+                            ),
+                            parse_mode="HTML",
+                        )
 
                     # Notify the other player
                     if opponent_id:
+                        is_white = game_info["player2_id"] == user.id
                         try:
-                            await context.bot.send_message(
-                                chat_id=opponent_id,
-                                text=f"🎉 {user.username} has joined your game!\n"
-                                f"Game ID: `{game_id}`\n\n"
-                                f"{self.render_board(board)}",
-                                parse_mode="Markdown",
-                            )
+                            with open("start.png", "rb") as f:
+                                await context.bot.send_photo(
+                                    chat_id=opponent_id,
+                                    photo=f,
+                                    caption=(
+                                        f"✅ {user.username} has joined game!\n\n"
+                                        f"Game ID: `{game_id}`\n"
+                                        f"You are: {color}\n\n"
+                                        f"{f'It\'s your turn! You are {color}' if is_white else f'Waiting for opponent to move...'}"
+                                    ),
+                                    parse_mode="HTML",
+                                )
                         except Exception:
                             pass
                 else:
@@ -354,7 +364,7 @@ class ChessBot:
 
         # Regular /start without parameters
         welcome_message = (
-            "<b>Welcome to Telegram Chess!</b>\n\n"
+            "<b>Welcome to CheZZ!</b>\n\n"
             "<b>Commands:</b>\n"
             "/newgame - Start a new game\n"
             "/join [code] - Join a game\n"
@@ -438,18 +448,27 @@ class ChessBot:
         if game_id:
             # Get the initial board state
             board = chess.Board()
-            await update.message.reply_text(
-                f"Successfully joined game {game_id}!\n\n{self.render_board(board)}\n\n"
-                f"White ({update.effective_user.username}) starts. Waiting for first move..."
-            )
+            svg_file = self.render_board(board)
+
+            with open(svg_file, "rb") as f:
+                await update.message.reply_photo(
+                    photo=f,
+                    caption=f"Successfully joined game {game_id}!\n\nWhite ({update.effective_user.username}) starts. Waiting for first move...",
+                    parse_mode="HTML",
+                )
+            # Clean up temp file
+            os.unlink(svg_file)
 
             # Notify the other player
             try:
-                await context.bot.send_message(
-                    chat_id=opponent_id,
-                    text=f"Player {update.effective_user.username} has joined your game!"
-                    f"\nGame ID: {game_id}\n\n{self.render_board(board)}",
-                )
+                opponent_svg_file = self.render_board(board)
+                with open(opponent_svg_file, "rb") as f:
+                    await context.bot.send_photo(
+                        chat_id=opponent_id,
+                        photo=f,
+                        caption=f"Player {update.effective_user.username} has joined your game!\nGame ID: {game_id}",
+                    )
+                os.unlink(opponent_svg_file)
             except Exception:
                 pass  # Ignore if unable to send message
         else:
@@ -458,9 +477,8 @@ class ChessBot:
     async def handle_move(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle chess moves."""
         player_id = update.effective_user.id
-        move_text = update.message.text.strip()
+        move_text = update.message.text.strip().lower()
 
-        # Validate move format (should be like "e2e4" or "Nf3")
         if not self.is_valid_move_format(move_text):
             return  # Don't respond to non-move messages
 
@@ -492,9 +510,11 @@ class ChessBot:
             # Get updated game info
             game_info = self.game_manager.get_game(game_id)
 
-            # Render the board
+            # Create the board
             board = chess.Board(result["new_fen"])
-            board_render = self.render_board(board)
+
+            # Get SVG file path
+            svg_file = self.render_board(board)
 
             # Determine who's turn it is now
             current_player = (
@@ -503,20 +523,27 @@ class ChessBot:
                 else "Black"
             )
 
-            # Prepare message
+            # Prepare caption (same as before)
             if result["status"] == "finished":
                 if result["winner"] == "draw":
-                    message = f"Game ended in a draw!\n\n{board_render}"
+                    caption = f"Game ended in a draw!"
                 else:
                     winner_name = "You" if result["winner"] == player_id else "Opponent"
-                    message = f"Checkmate! {winner_name} wins!\n\n{board_render}"
+                    caption = f"Checkmate! {winner_name} wins!"
 
                 # Delete the finished game
                 self.game_manager.delete_game(game_id)
             else:
-                message = f"Move: {move_text}\nCurrent turn: {current_player}\n\n{board_render}"
+                caption = f"Move: {move_text}\nCurrent turn: {current_player}"
 
-            await update.message.reply_text(message)
+            # Send SVG as document
+            with open(svg_file, "rb") as f:
+                await update.message.reply_photo(
+                    photo=f, caption=caption, parse_mode="HTML"
+                )
+
+            # Clean up temp file
+            os.unlink(svg_file)
 
             # Notify the other player
             other_player_id = (
@@ -525,10 +552,20 @@ class ChessBot:
                 else game_info["player1_id"]
             )
             try:
-                notification_message = f"Your turn! Opponent {update.effective_user.username} played {move_text}\n\n{board_render}"
-                await context.bot.send_message(
-                    chat_id=other_player_id, text=notification_message
-                )
+                # Create another SVG for the opponent
+                opponent_svg_file = self.render_board(board)
+                opponent_caption = f"Your turn! Opponent {update.effective_user.username} played {move_text}"
+
+                with open(opponent_svg_file, "rb") as f:
+                    await context.bot.send_photo(
+                        chat_id=other_player_id,
+                        photo=f,
+                        caption=opponent_caption,
+                    )
+
+                # Clean up temp file
+                os.unlink(opponent_svg_file)
+
             except Exception:
                 pass  # Ignore if unable to send message
         else:
@@ -540,41 +577,37 @@ class ChessBot:
         pattern = r"^([a-h][1-8][a-h][1-8]|[a-h][1-8]|O-O(-O)?|N[a-h][1-8]?|B[a-h][1-8]?|R[a-h][1-8]?|Q[a-h][1-8]?|K[a-h][1-8]?)$"
         return bool(re.match(pattern, move_text.lower()))
 
-    def render_board(self, board):
-        """Render the chess board as a text representation."""
-        # Convert the board to a string representation
-        fen = board.fen()
-        rows = fen.split(" ")[0].split("/")
+    def render_board(self, board, game_id=None):
+        """Render the chess board as a PNG image and return file path."""
+        import cairosvg
+        import time
+        import random
 
-        # Map pieces to Unicode characters
-        piece_symbols = {
-            "p": "♟",
-            "r": "♜",
-            "n": "♞",
-            "b": "♝",
-            "q": "♛",
-            "k": "♚",  # Black
-            "P": "♙",
-            "R": "♖",
-            "N": "♘",
-            "B": "♗",
-            "Q": "♕",
-            "K": "♔",  # White
-        }
+        timestamp = int(time.time())
+        random_suffix = random.randint(1000, 9999)
+        filename = f"board_{timestamp}_{random_suffix}.png"
+        tmp_dir = "tmp"
 
-        board_str = "  a b c d e f g h\n"
-        for i, row in enumerate(rows):
-            board_str += f"{8-i} "
-            for char in row:
-                if char.isdigit():
-                    # Empty squares
-                    board_str += ". " * int(char)
-                else:
-                    board_str += piece_symbols[char] + " "
-            board_str += f"{8-i}\n"
-        board_str += "  a b c d e f g h"
+        print(filename)
 
-        return board_str
+        if game_id:
+            # Create game-specific subdirectory
+            game_dir = os.path.join(tmp_dir, game_id)
+            if not os.path.exists(game_dir):
+                os.makedirs(game_dir)
+            filepath = os.path.join(game_dir, filename)
+        else:
+            filepath = os.path.join(tmp_dir, filename)
+
+        # Generate SVG and convert to PNG
+        svg_content = chess.svg.board(board=board, size=400, coordinates=True)
+        png_bytes = cairosvg.svg2png(bytestring=svg_content.encode("utf-8"))
+
+        # Save to file
+        with open(filepath, "wb") as f:
+            f.write(png_bytes)
+
+        return filepath
 
     async def current_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show user's current active game information."""
