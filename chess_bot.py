@@ -521,8 +521,8 @@ class ChessBot:
             # Create the board
             board = chess.Board(result["new_fen"])
 
-            # Get SVG file path
-            svg_file = self.render_board(board)
+            # Get PNG file path
+            png_file = self.render_board(board, game_id)
 
             # Determine who's turn it is now
             current_player = (
@@ -531,50 +531,121 @@ class ChessBot:
                 else "Black"
             )
 
-            # Prepare caption (same as before)
+            # Check if game is finished
             if result["status"] == "finished":
-                if result["winner"] == "draw":
-                    caption = f"Game ended in a draw!"
-                else:
-                    winner_name = "You" if result["winner"] == player_id else "Opponent"
-                    caption = f"Checkmate! {winner_name} wins!"
-                # Delete the finished game
-                self.game_manager.delete_game(game_id)
-            else:
-                caption = f"Move: {move_text}\nCurrent turn: {current_player}"
-
-            # Send SVG as document
-            with open(svg_file, "rb") as f:
-                await update.message.reply_photo(
-                    photo=f, caption=caption, parse_mode="HTML"
+                # Get opponent ID
+                opponent_id = (
+                    game_info["player2_id"]
+                    if player_id == game_info["player1_id"]
+                    else game_info["player1_id"]
                 )
 
-            # Clean up temp file
-            os.unlink(svg_file)
+                if result["winner"] == "draw":
+                    # DRAW - notify both players
+                    player_caption = "🏁 Game ended in a draw!"
+                    opponent_caption = "🏁 Game ended in a draw!"
 
-            # Notify the other player
-            other_player_id = (
-                game_info["player2_id"]
-                if player_id == game_info["player1_id"]
-                else game_info["player1_id"]
-            )
-            try:
-                # Create another SVG for the opponent
-                opponent_svg_file = self.render_board(board)
-                opponent_caption = f"Opponent {update.effective_user.username} played {move_text}\n\nYour turn!"
+                    # Send to player who made the move
+                    with open(png_file, "rb") as f:
+                        await update.message.reply_photo(
+                            photo=f, caption=player_caption, parse_mode="HTML"
+                        )
 
-                with open(opponent_svg_file, "rb") as f:
-                    await context.bot.send_photo(
-                        chat_id=other_player_id,
-                        photo=f,
-                        caption=opponent_caption,
+                    # Clean up temp file
+                    os.unlink(png_file)
+
+                    # Send to opponent
+                    if opponent_id:
+                        try:
+                            opponent_png_file = self.render_board(board, game_id)
+                            with open(opponent_png_file, "rb") as f:
+                                await context.bot.send_photo(
+                                    chat_id=opponent_id,
+                                    photo=f,
+                                    caption=opponent_caption,
+                                    parse_mode="HTML",
+                                )
+                            os.unlink(opponent_png_file)
+                        except Exception:
+                            pass  # Ignore if unable to send message
+
+                else:
+                    # CHECKMATE - one player wins, one loses
+                    is_winner = result["winner"] == player_id
+
+                    if is_winner:
+                        # Current player is the WINNER
+                        player_caption = "🏆 Checkmate! You win!"
+                        opponent_caption = "💀 Checkmate! You lose!"
+                    else:
+                        # Current player is the LOSER
+                        player_caption = "💀 Checkmate! You lose!"
+                        opponent_caption = "🏆 Checkmate! You win!"
+
+                    # Send to player who made the move
+                    with open(png_file, "rb") as f:
+                        await update.message.reply_photo(
+                            photo=f, caption=player_caption, parse_mode="HTML"
+                        )
+
+                    # Clean up temp file
+                    os.unlink(png_file)
+
+                    # Send to opponent
+                    if opponent_id:
+                        try:
+                            opponent_png_file = self.render_board(board, game_id)
+                            with open(opponent_png_file, "rb") as f:
+                                await context.bot.send_photo(
+                                    chat_id=opponent_id,
+                                    photo=f,
+                                    caption=opponent_caption,
+                                    parse_mode="HTML",
+                                )
+                            os.unlink(opponent_png_file)
+                        except Exception:
+                            pass  # Ignore if unable to send message
+
+                # Delete the finished game
+                self.game_manager.delete_game(game_id)
+
+            else:
+                # Game continues
+                caption = f"Move: {move_text}\nCurrent turn: {current_player}"
+
+                # Send to player who made the move
+                with open(png_file, "rb") as f:
+                    await update.message.reply_photo(
+                        photo=f, caption=caption, parse_mode="HTML"
                     )
 
                 # Clean up temp file
-                os.unlink(opponent_svg_file)
+                os.unlink(png_file)
 
-            except Exception:
-                pass  # Ignore if unable to send message
+                # Notify the other player
+                other_player_id = (
+                    game_info["player2_id"]
+                    if player_id == game_info["player1_id"]
+                    else game_info["player1_id"]
+                )
+                try:
+                    # Create another PNG for the opponent
+                    opponent_png_file = self.render_board(board, game_id)
+                    opponent_caption = f"Opponent {update.effective_user.username} played {move_text}\n\nYour turn!"
+
+                    with open(opponent_png_file, "rb") as f:
+                        await context.bot.send_photo(
+                            chat_id=other_player_id,
+                            photo=f,
+                            caption=opponent_caption,
+                            parse_mode="HTML",
+                        )
+
+                    # Clean up temp file
+                    os.unlink(opponent_png_file)
+
+                except Exception:
+                    pass  # Ignore if unable to send message
         else:
             await update.message.reply_text(f"Invalid move: {result['error']}")
 
