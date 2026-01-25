@@ -12,11 +12,12 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import asyncio
 import re
-from configuration import BOT_NAME
+
+from configuration import BOT_NAME, GAMES_DB
 
 
 class ChessGameManager:
-    def __init__(self, db_path='chess_games.db'):
+    def __init__(self, db_path=GAMES_DB):
         self.db_path = db_path
         self.init_db()
     
