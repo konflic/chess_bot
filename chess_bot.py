@@ -266,7 +266,7 @@ class ChessBot:
         invite_message = (
             f"New game created!\n"
             f"Game ID: {game_id}\n"
-            f"Invite link: https://t.me/{BOT_NAME}?start={invite_link}\n\n"
+            f"Invite link: https://t.me/{BOT_NAME}?join={invite_link}\n\n"
             f"Send this link to someone to play against them!"
         )
         await update.message.reply_text(invite_message)
@@ -454,13 +454,10 @@ class ChessBot:
         
         # Format the response
         game_info_message = (
-            f"Current Active Game:
-"
-            f"ID: {game_id}
-"
-            f"Opponent: {opponent_name}
-"
-            f"Started at: {created_at}"
+            f"Current Active Game:"
+            f"\nID: {game_id}"
+            f"\nOpponent: {opponent_name}"
+            f"\nStarted at: {created_at}"
         )
         
         await update.message.reply_text(game_info_message)

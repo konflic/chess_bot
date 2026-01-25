@@ -1,2 +1,2 @@
 python-telegram-bot==22.5
-chess==
+chess==1.11.2
