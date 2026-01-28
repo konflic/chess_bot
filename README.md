@@ -1,6 +1,6 @@
 # Telegram Chess Bot
 
-A multiplayer chess game for Telegram with real-time gameplay and database storage.
+A multiplayer chess game for Telegram with real-time gameplay, database storage, and multilingual support.
 
 ## Features
 
@@ -10,6 +10,10 @@ A multiplayer chess game for Telegram with real-time gameplay and database stora
 - Support for standard chess notation moves
 - SQLite database for storing game states
 - Automatic cleanup of finished games
+- Multilingual support (English and Russian)
+- Automatic language detection based on user's Telegram settings
+- Command menu in Telegram interface for easy navigation
+- Keyboard shortcuts for common commands
 
 ## Requirements
 
@@ -54,3 +58,7 @@ python bot.py
 - SQLite database stores active games and move history
 - Games are automatically removed from database when finished
 - Each game has a unique invite link that becomes invalid after use
+- Language support automatically detects user's language from Telegram settings
+- All messages are translated based on user's preferred language
+- Command menu appears in Telegram's menu button for easy access
+- Keyboard shortcuts provide quick access to common commands

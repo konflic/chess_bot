@@ -5,7 +5,7 @@ import random
 import string
 import chess
 import chess.svg
-from telegram import Update
+from telegram import Update, BotCommand, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -19,7 +19,7 @@ import cairosvg
 import time
 import random
 
-from configuration import BOT_NAME, GAMES_DB
+from configuration import BOT_NAME, GAMES_DB, language_manager
 
 
 class ChessGameManager:
@@ -102,7 +102,7 @@ class ChessGameManager:
 
         cursor.execute(
             """
-            SELECT game_id, player1_id FROM games 
+            SELECT game_id, player1_id FROM games
             WHERE invite_link = ? AND player2_id IS NULL AND status = 'waiting'
         """,
             (invite_link,),
@@ -115,7 +115,7 @@ class ChessGameManager:
             # Update the game to add player2 and start the game
             cursor.execute(
                 """
-                UPDATE games 
+                UPDATE games
                 SET player2_id = ?, status = 'playing'
                 WHERE game_id = ?
             """,
@@ -202,7 +202,7 @@ class ChessGameManager:
 
                 cursor.execute(
                     """
-                    UPDATE games 
+                    UPDATE games
                     SET fen = ?, current_turn = ?, status = ?
                     WHERE game_id = ?
                 """,
@@ -266,6 +266,11 @@ class ChessBot:
         self.application = Application.builder().token(token).build()
         self.game_manager = ChessGameManager()
         self.setup_handlers()
+        self.setup_commands()
+
+        # Create tmp directory if it doesn't exist
+        if not os.path.exists("tmp"):
+            os.makedirs("tmp")
 
     def setup_handlers(self):
         """Set up command handlers."""
@@ -278,9 +283,24 @@ class ChessBot:
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move)
         )
 
+    async def setup_commands(self):
+        """Set up bot commands menu in Telegram interface."""
+        commands = [
+            BotCommand("start", "Show welcome message and instructions"),
+            BotCommand("newgame", "Start a new chess game"),
+            BotCommand("join", "Join a game using invite code"),
+            BotCommand("current_game", "Show your current game info"),
+            BotCommand("leave", "Leave current game (forfeit)"),
+        ]
+
+        await self.application.bot.set_my_commands(commands)
+
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle the /start command."""
         user = update.effective_user
+
+        # Detect user language from Telegram
+        user_language = update.effective_user.language_code
 
         # Check if there are arguments (deep link)
         if context.args and len(context.args) > 0:
@@ -295,7 +315,7 @@ class ChessBot:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    SELECT game_id FROM games 
+                    SELECT game_id FROM games
                     WHERE (player1_id = ? OR player2_id = ?) AND status = 'playing'
                 """,
                     (user.id, user.id),
@@ -305,9 +325,10 @@ class ChessBot:
 
                 if active_game:
                     await update.message.reply_text(
-                        f"⚠️ You're already in an active game!\n"
-                        f"Game ID: `{active_game[0]}`\n"
-                        f"Use /current_game to see details\nor /leade to leave the game.",
+                        f"⚠️ {language_manager.get_message('already_in_game', user.id, user_language)}\n"
+                        f"{language_manager.get_message('game_id', user.id)}: `{active_game[0]}`\n"
+                        f"{language_manager.get_message('use_current_game', user.id)}\n"
+                        f"{language_manager.get_message('or_leave', user.id)}",
                         parse_mode="HTML",
                     )
                     return
@@ -315,23 +336,23 @@ class ChessBot:
                 # Try to join the game
                 game_id, opponent_id = self.game_manager.join_game(invite_link, user.id)
 
-                # Determine if user is white or black
-                game_info = self.game_manager.get_game(game_id)
-                is_white = game_info["player1_id"] == user.id
-                color = "White 🌝" if is_white else "Black 🌚"
-
                 if game_id:
+                    # Determine if user is white or black
+                    game_info = self.game_manager.get_game(game_id)
+                    is_white = game_info["player1_id"] == user.id
+                    color = language_manager.get_message('white', user.id, user_language) if is_white else language_manager.get_message('black', user.id, user_language)
+
                     with open("start.png", "rb") as f:
                         await update.message.reply_photo(
                             photo=f,
                             caption=(
-                                f"✅ Successfully joined game!\n\n"
-                                f"Game ID: `{game_id}`\n"
-                                f"You are: {color}\n\n"
+                                f"✅ {language_manager.get_message('joined_success', user.id, user_language)}\n\n"
+                                f"{language_manager.get_message('game_id', user.id)}: `{game_id}`\n"
+                                f"{language_manager.get_message('you_are', user.id)} {color}\n\n"
                                 + (
-                                    "Its your turn!"
+                                    language_manager.get_message('your_turn', user.id)
                                     if is_white
-                                    else "Waiting for opponent to move..."
+                                    else language_manager.get_message('waiting_opponent', user.id)
                                 )
                             ),
                             parse_mode="HTML",
@@ -339,20 +360,21 @@ class ChessBot:
 
                     # Notify the other player
                     if opponent_id:
-                        color = "Black 🌚" if is_white else "White 🌝"
+                        # Get opponent's language preference
+                        opponent_color = language_manager.get_message('black', opponent_id) if is_white else language_manager.get_message('white', opponent_id)
                         try:
                             with open("start.png", "rb") as f:
                                 await context.bot.send_photo(
                                     chat_id=opponent_id,
                                     photo=f,
                                     caption=(
-                                        f"✅ {user.username} has joined game!\n\n"
-                                        f"Game ID: `{game_id}`\n"
-                                        f"You are: {color}\n\n"
+                                        f"✅ {user.username} {language_manager.get_message('has_joined', opponent_id)}\n\n"
+                                        f"{language_manager.get_message('game_id', opponent_id)}: `{game_id}`\n"
+                                        f"{language_manager.get_message('you_are', opponent_id)} {opponent_color}\n\n"
                                         + (
-                                            "Its your turn!"
+                                            language_manager.get_message('your_turn', opponent_id)
                                             if not is_white
-                                            else "Waiting for opponent to move..."
+                                            else language_manager.get_message('waiting_opponent', opponent_id)
                                         )
                                     ),
                                     parse_mode="HTML",
@@ -361,38 +383,52 @@ class ChessBot:
                             pass
                 else:
                     await update.message.reply_text(
-                        "❌ Invalid or expired invite link!\n\n"
-                        "Possible reasons:\n"
-                        "• Game already has 2 players\n"
-                        "• Game doesn't exist\n"
-                        "• Link is expired\n\n"
-                        "Create your own game with /newgame"
+                        f"❌ {language_manager.get_message('invalid_invite', user.id, user_language)}\n\n"
+                        f"{language_manager.get_message('invalid_reasons', user.id)}\n"
+                        f"{language_manager.get_message('game_has_players', user.id)}\n"
+                        f"{language_manager.get_message('game_not_exist', user.id)}\n"
+                        f"{language_manager.get_message('link_expired', user.id)}\n\n"
+                        f"{language_manager.get_message('create_own_game', user.id)}"
                     )
                 return
 
         # Regular /start without parameters
         welcome_message = (
-            "<b>Welcome to CheZZ!</b>\n\n"
-            "<b>Commands:</b>\n"
-            "/newgame - Start a new game\n"
-            "/join [code] - Join a game\n"
-            "/current_game - Show your current game\n"
-            "/leave - Leave current game (forfeit)\n\n"
-            "<b>How to play:</b>\n"
-            "Just type moves like e2e4, Nf3, or O-O"
+            f"<b>{language_manager.get_message('welcome_title', user.id, user_language)}</b>\n\n"
+            f"<b>{language_manager.get_message('welcome_commands', user.id)}</b>\n"
+            f"{language_manager.get_message('welcome_newgame', user.id)}\n"
+            f"{language_manager.get_message('welcome_join', user.id)}\n"
+            f"{language_manager.get_message('welcome_current_game', user.id)}\n"
+            f"{language_manager.get_message('welcome_leave', user.id)}\n\n"
+            f"<b>{language_manager.get_message('welcome_how_to_play', user.id)}</b>\n"
+            f"{language_manager.get_message('welcome_move_format', user.id)}"
         )
-        await update.message.reply_text(welcome_message, parse_mode="HTML")
+
+        # Create a keyboard with common commands
+        keyboard = [
+            ["/newgame", "/current_game"],
+            ["/join", "/leave"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+        await update.message.reply_text(
+            welcome_message,
+            parse_mode="HTML",
+            reply_markup=reply_markup
+        )
 
     async def new_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start a new game."""
-        player_id = update.effective_user.id
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
 
         # Check if user is already in a game
         conn = sqlite3.connect(self.game_manager.db_path)
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT game_id FROM games 
+            SELECT game_id FROM games
             WHERE (player1_id = ? OR player2_id = ?) AND status = 'playing'
         """,
             (player_id, player_id),
@@ -402,7 +438,7 @@ class ChessBot:
 
         if active_game:
             await update.message.reply_text(
-                f"You're already in an active game ({active_game[0]})!"
+                f"{language_manager.get_message('already_in_game', user.id, user_language)} ({active_game[0]})!"
             )
             return
 
@@ -412,21 +448,23 @@ class ChessBot:
         deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
 
         invite_message = (
-            "<b>New chess game created!</b>\n\n"
-            f"<b>Game ID:</b> <code>{game_id}</code>\n"
-            f"<b>Invite code:</b> <code>{invite_link}</code>\n\n"
-            f"<b>Share this link to invite a friend:</b>\n{deep_link}\n\n"
-            f"<b>Or they can use:</b>\n<code>/join {invite_link}</code>"
+            f"<b>{language_manager.get_message('new_game_created', user.id, user_language)}</b>\n\n"
+            f"<b>{language_manager.get_message('game_id', user.id)}:</b> <code>{game_id}</code>\n"
+            f"<b>{language_manager.get_message('invite_code', user.id)}:</b> <code>{invite_link}</code>\n\n"
+            f"<b>{language_manager.get_message('share_link', user.id)}</b>\n{deep_link}\n\n"
+            f"<b>{language_manager.get_message('or_they_can_use', user.id)}</b>\n<code>/join {invite_link}</code>"
         )
         await update.message.reply_text(invite_message, parse_mode="HTML")
 
     async def join_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Join a game using an invite link."""
-        player_id = update.effective_user.id
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
 
         # Check if user provided an invite link
         if len(context.args) != 1:
-            await update.message.reply_text("Usage: /join [game_id]")
+            await update.message.reply_text(language_manager.get_message('join_usage', user.id, user_language))
             return
 
         invite_link = context.args[0]
@@ -436,7 +474,7 @@ class ChessBot:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT game_id FROM games 
+            SELECT game_id FROM games
             WHERE (player1_id = ? OR player2_id = ?) AND status = 'playing'
         """,
             (player_id, player_id),
@@ -446,7 +484,7 @@ class ChessBot:
 
         if active_game:
             await update.message.reply_text(
-                f"You're already in an active game ({active_game[0]})!"
+                f"{language_manager.get_message('already_in_game', user.id, user_language)} ({active_game[0]})!"
             )
             return
 
@@ -461,7 +499,7 @@ class ChessBot:
             with open(svg_file, "rb") as f:
                 await update.message.reply_photo(
                     photo=f,
-                    caption=f"Successfully joined game {game_id}!\n\nWhite ({update.effective_user.username}) starts. Waiting for first move...",
+                    caption=f"{language_manager.get_message('joined_success', user.id, user_language)} {game_id}!\n\n{language_manager.get_message('white', user.id)} ({update.effective_user.username}) {language_manager.get_message('your_turn', user.id)}",
                     parse_mode="HTML",
                 )
             # Clean up temp file
@@ -474,17 +512,19 @@ class ChessBot:
                     await context.bot.send_photo(
                         chat_id=opponent_id,
                         photo=f,
-                        caption=f"Player {update.effective_user.username} has joined your game!\nGame ID: {game_id}",
+                        caption=f"{language_manager.get_message('player_joined', opponent_id)} {update.effective_user.username}!\n{language_manager.get_message('game_id', opponent_id)}: {game_id}",
                     )
                 os.unlink(opponent_svg_file)
             except Exception:
                 pass  # Ignore if unable to send message
         else:
-            await update.message.reply_text("Invalid or expired invite link!")
+            await update.message.reply_text(language_manager.get_message('invalid_invite', user.id, user_language))
 
     async def handle_move(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle chess moves."""
-        player_id = update.effective_user.id
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
         move_text = update.message.text.strip().lower()
 
         if not self.is_valid_move_format(move_text):
@@ -495,7 +535,7 @@ class ChessBot:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT game_id FROM games 
+            SELECT game_id FROM games
             WHERE (player1_id = ? OR player2_id = ?) AND status = 'playing'
         """,
             (player_id, player_id),
@@ -505,7 +545,7 @@ class ChessBot:
 
         if not result:
             await update.message.reply_text(
-                "You're not in an active game. Start one with /newgame"
+                language_manager.get_message('not_in_active_game', user.id, user_language)
             )
             return
 
@@ -526,9 +566,9 @@ class ChessBot:
 
             # Determine who's turn it is now
             current_player = (
-                "White"
+                language_manager.get_message('white', user.id)
                 if game_info["current_turn"] == game_info["player1_id"]
-                else "Black"
+                else language_manager.get_message('black', user.id)
             )
 
             # Check if game is finished
@@ -542,8 +582,8 @@ class ChessBot:
 
                 if result["winner"] == "draw":
                     # DRAW - notify both players
-                    player_caption = "🏁 Game ended in a draw!"
-                    opponent_caption = "🏁 Game ended in a draw!"
+                    player_caption = f"🏁 {language_manager.get_message('game_draw', user.id, user_language)}"
+                    opponent_caption = f"🏁 {language_manager.get_message('game_draw', opponent_id)}"
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
@@ -575,12 +615,12 @@ class ChessBot:
 
                     if is_winner:
                         # Current player is the WINNER
-                        player_caption = "🏆 Checkmate! You win!"
-                        opponent_caption = "💀 Checkmate! You lose!"
+                        player_caption = f"🏆 {language_manager.get_message('checkmate_win', user.id, user_language)}"
+                        opponent_caption = f"💀 {language_manager.get_message('checkmate_lose', opponent_id)}"
                     else:
                         # Current player is the LOSER
-                        player_caption = "💀 Checkmate! You lose!"
-                        opponent_caption = "🏆 Checkmate! You win!"
+                        player_caption = f"💀 {language_manager.get_message('checkmate_lose', user.id, user_language)}"
+                        opponent_caption = f"🏆 {language_manager.get_message('checkmate_win', opponent_id)}"
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
@@ -611,7 +651,7 @@ class ChessBot:
 
             else:
                 # Game continues
-                caption = f"Move: {move_text}\nCurrent turn: {current_player}"
+                caption = f"{language_manager.get_message('move', user.id)}: {move_text}\n{language_manager.get_message('current_turn', user.id)}: {current_player}"
 
                 # Send to player who made the move
                 with open(png_file, "rb") as f:
@@ -631,7 +671,7 @@ class ChessBot:
                 try:
                     # Create another PNG for the opponent
                     opponent_png_file = self.render_board(board, game_id)
-                    opponent_caption = f"Opponent {update.effective_user.username} played {move_text}\n\nYour turn!"
+                    opponent_caption = f"{language_manager.get_message('opponent_played', other_player_id)} {update.effective_user.username} {move_text}\n\n{language_manager.get_message('your_turn_exclamation', other_player_id)}"
 
                     with open(opponent_png_file, "rb") as f:
                         await context.bot.send_photo(
@@ -647,7 +687,7 @@ class ChessBot:
                 except Exception:
                     pass  # Ignore if unable to send message
         else:
-            await update.message.reply_text(f"Invalid move: {result['error']}")
+            await update.message.reply_text(f"{language_manager.get_message('invalid_move', user.id, user_language)} {result['error']}")
 
     def is_valid_move_format(self, move_text):
         """Check if the move format is potentially valid."""
@@ -685,7 +725,9 @@ class ChessBot:
 
     async def current_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show user's current active game information."""
-        player_id = update.effective_user.id
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
 
         # Find the user's active game
         conn = sqlite3.connect(self.game_manager.db_path)
@@ -705,7 +747,7 @@ class ChessBot:
 
         if not result:
             await update.message.reply_text(
-                "You don't have any active games. Start one with /newgame"
+                language_manager.get_message('no_active_games', user.id, user_language)
             )
             return
 
@@ -725,18 +767,20 @@ class ChessBot:
 
         # Format the response
         game_info_message = (
-            f"Current Active Game:"
-            f"\nID: {game_id}"
-            f"\nOpponent: {opponent_name}"
-            f"\nStarted at: {created_at}"
+            f"{language_manager.get_message('current_active_game', user.id, user_language)}"
+            f"\n{language_manager.get_message('game_id', user.id)}: {game_id}"
+            f"\n{language_manager.get_message('opponent', user.id)}: {opponent_name}"
+            f"\n{language_manager.get_message('started_at', user.id)}: {created_at}"
         )
 
         await update.message.reply_text(game_info_message)
 
     async def leave_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Leave the current game immediately."""
-        player_id = update.effective_user.id
-        username = update.effective_user.username or update.effective_user.first_name
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+        username = user.username or user.first_name
 
         # Find the user's active game
         conn = sqlite3.connect(self.game_manager.db_path)
@@ -744,10 +788,10 @@ class ChessBot:
 
         cursor.execute(
             """
-            SELECT g.game_id, 
-                CASE 
-                    WHEN g.player1_id = ? THEN g.player2_id 
-                    ELSE g.player1_id 
+            SELECT g.game_id,
+                CASE
+                    WHEN g.player1_id = ? THEN g.player2_id
+                    ELSE g.player1_id
                 END as opponent_id
             FROM games g
             WHERE (g.player1_id = ? OR player2_id = ?) AND status = 'playing'
@@ -759,7 +803,9 @@ class ChessBot:
 
         if not result:
             await update.message.reply_text(
-                "❌ No active game found.\n" "You can start a new one with /newgame"
+                f"❌ {language_manager.get_message('no_active_game', user.id, user_language)}\n"
+                f"{language_manager.get_message('create_own_game', user.id)}",
+                parse_mode="HTML",
             )
             conn.close()
             return
@@ -771,10 +817,10 @@ class ChessBot:
 
         # Notify the player who left
         await update.message.reply_text(
-            "<b>Game ended.</b>\n\n"
-            f"You have left game <code>{game_id}</code>.\n"
-            f"Your opponent wins by forfeit.\n\n"
-            f"Start a new game anytime with <code>/newgame</code>",
+            f"<b>{language_manager.get_message('game_ended', user.id, user_language)}</b>\n\n"
+            f"{language_manager.get_message('left_game', user.id)} <code>{game_id}</code>.\n"
+            f"{language_manager.get_message('opponent_wins', user.id)}\n\n"
+            f"{language_manager.get_message('start_new_game', user.id)} <code>/newgame</code>",
             parse_mode="HTML",
         )
 
@@ -783,10 +829,10 @@ class ChessBot:
             try:
                 await context.bot.send_message(
                     chat_id=opponent_id,
-                    text="<b>Victory by forfeit!</b>\n\n"
-                    f"Player <b>{username}</b> has left game <code>{game_id}</code>.\n"
-                    f"You are awarded the win! 🎉\n\n"
-                    f"Start a new game with <code>/newgame</code>",
+                    text=f"<b>{language_manager.get_message('victory_forfeit', opponent_id)}</b>\n\n"
+                    f"{language_manager.get_message('player_left', opponent_id)} <b>{username}</b> <code>{game_id}</code>.\n"
+                    f"{language_manager.get_message('awarded_win', opponent_id)}\n\n"
+                    f"{language_manager.get_message('start_new_game', opponent_id)} <code>/newgame</code>",
                     parse_mode="HTML",
                 )
             except Exception as e:
@@ -797,4 +843,4 @@ class ChessBot:
     def run(self):
         """Run the bot."""
         print("Starting chess bot...")
-        self.application.run_polling()
+        self.application.run_polling(allowed_updates=Update.ALL_TYPES)
