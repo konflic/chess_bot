@@ -309,6 +309,8 @@ class ChessBot:
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("current_game", self.current_game))
         self.application.add_handler(CommandHandler("surrender", self.surrender_game))
+        self.application.add_handler(CommandHandler("confirm_surrender", self.confirm_surrender))
+        self.application.add_handler(CommandHandler("cancel", self.cancel_surrender))
         self.application.add_handler(CommandHandler("ping", self.ping_opponent))
         self.application.add_handler(CommandHandler("board", self.show_board))
         self.application.add_handler(
@@ -847,11 +849,10 @@ class ChessBot:
         await update.message.reply_text(game_info_message, parse_mode="HTML")
 
     async def surrender_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Surrender the current game immediately."""
+        """Ask for confirmation before surrendering the game."""
         user = update.effective_user
         player_id = user.id
         user_language = user.language_code
-        username = user.username or user.first_name
 
         # Find the user's active game
         conn = sqlite3.connect(self.game_manager.db_path)
@@ -859,18 +860,15 @@ class ChessBot:
 
         cursor.execute(
             """
-            SELECT g.game_id,
-                CASE
-                    WHEN g.player1_id = ? THEN g.player2_id
-                    ELSE g.player1_id
-                END as opponent_id
+            SELECT g.game_id
             FROM games g
             WHERE (g.player1_id = ? OR player2_id = ?) AND status = 'playing'
         """,
-            (player_id, player_id, player_id),
+            (player_id, player_id),
         )
 
         result = cursor.fetchone()
+        conn.close()
 
         if not result:
             await update.message.reply_text(
@@ -878,15 +876,69 @@ class ChessBot:
                 f"{language_manager.get_message('create_own_game', user.id)}",
                 parse_mode="HTML",
             )
+            return
+
+        # Store the game_id in user_data for later use in confirm_surrender
+        context.user_data["surrender_game_id"] = result[0]
+
+        # Ask for confirmation
+        await update.message.reply_text(
+            language_manager.get_message('confirm_surrender', user.id, user_language),
+            parse_mode="HTML",
+        )
+
+    async def confirm_surrender(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirm surrender and end the game."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+        username = user.username or user.first_name
+
+        # Check if there's a pending surrender confirmation
+        if "surrender_game_id" not in context.user_data:
+            await update.message.reply_text(
+                f"❌ {language_manager.get_message('no_active_game', user.id, user_language)}",
+                parse_mode="HTML",
+            )
+            return
+
+        game_id = context.user_data["surrender_game_id"]
+
+        # Find opponent
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT CASE
+                WHEN g.player1_id = ? THEN g.player2_id
+                ELSE g.player1_id
+            END as opponent_id
+            FROM games g
+            WHERE g.game_id = ? AND status = 'playing'
+        """,
+            (player_id, game_id),
+        )
+
+        result = cursor.fetchone()
+
+        if not result:
+            await update.message.reply_text(
+                f"❌ {language_manager.get_message('no_active_game', user.id, user_language)}",
+                parse_mode="HTML",
+            )
             conn.close()
             return
 
-        game_id, opponent_id = result
+        opponent_id = result[0]
 
         # Delete the game
         self.game_manager.delete_game(game_id)
 
-        # Notify the player who left
+        # Clear the surrender confirmation from user_data
+        del context.user_data["surrender_game_id"]
+
+        # Notify the player who surrendered
         await update.message.reply_text(
             f"<b>{language_manager.get_message('game_ended', user.id, user_language)}</b>\n\n"
             f"{language_manager.get_message('left_game', user.id)} <code>{game_id}</code>.\n"
@@ -909,7 +961,29 @@ class ChessBot:
             except Exception as e:
                 print(f"Note: Could not notify opponent {opponent_id}: {e}")
 
-            conn.close()
+        conn.close()
+
+    async def cancel_surrender(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Cancel the surrender confirmation."""
+        user = update.effective_user
+        user_language = user.language_code
+
+        # Check if there's a pending surrender confirmation
+        if "surrender_game_id" not in context.user_data:
+            await update.message.reply_text(
+                f"❌ {language_manager.get_message('no_active_game', user.id, user_language)}",
+                parse_mode="HTML",
+            )
+            return
+
+        # Clear the surrender confirmation from user_data
+        del context.user_data["surrender_game_id"]
+
+        # Notify the player
+        await update.message.reply_text(
+            language_manager.get_message('surrender_cancelled', user.id, user_language),
+            parse_mode="HTML",
+        )
 
     async def ping_opponent(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Send a reminder to the opponent that it's their turn."""
