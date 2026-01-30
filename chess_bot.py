@@ -135,6 +135,21 @@ class ChessGameManager:
         if result:
             game_id, player1_id = result
 
+            # Check if these two players already have a playing game together
+            cursor.execute(
+                """
+                SELECT game_id FROM games
+                WHERE ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
+                AND status = 'playing'
+                """,
+                (player1_id, player2_id, player2_id, player1_id),
+            )
+
+            existing_game = cursor.fetchone()
+            if existing_game:
+                conn.close()
+                return None, "existing_game"
+
             # Update the game to add player2 and start the game
             cursor.execute(
                 """
@@ -437,7 +452,8 @@ class ChessBot:
                 # since we support multiple games per user
 
                 # Try to join the game
-                game_id, opponent_id = self.game_manager.join_game(invite_link, user.id)
+                result = self.game_manager.join_game(invite_link, user.id)
+                game_id, opponent_id = result if isinstance(result, tuple) and result[1] != "existing_game" else (None, None)
 
                 if game_id:
                     # Set this as the active game for the player
@@ -503,14 +519,22 @@ class ChessBot:
                         except Exception:
                             pass
                 else:
-                    await update.message.reply_text(
-                        f"❌ {language_manager.get_message('invalid_invite', user.id, user_language)}\n\n"
-                        f"{language_manager.get_message('invalid_reasons', user.id)}\n"
-                        f"{language_manager.get_message('game_has_players', user.id)}\n"
-                        f"{language_manager.get_message('game_not_exist', user.id)}\n"
-                        f"{language_manager.get_message('link_expired', user.id)}\n\n"
-                        f"{language_manager.get_message('create_own_game', user.id)}"
-                    )
+                    # Check if the reason is existing game
+                    if isinstance(result, tuple) and result[1] == "existing_game":
+                        await update.message.reply_text(
+                            f"❌ {language_manager.get_message('existing_game_error', user.id, user_language)}\n\n"
+                            f"{language_manager.get_message('check_active_games', user.id)} <code>/active_games</code>",
+                            parse_mode="HTML",
+                        )
+                    else:
+                        await update.message.reply_text(
+                            f"❌ {language_manager.get_message('invalid_invite', user.id, user_language)}\n\n"
+                            f"{language_manager.get_message('invalid_reasons', user.id)}\n"
+                            f"{language_manager.get_message('game_has_players', user.id)}\n"
+                            f"{language_manager.get_message('game_not_exist', user.id)}\n"
+                            f"{language_manager.get_message('link_expired', user.id)}\n\n"
+                            f"{language_manager.get_message('create_own_game', user.id)}"
+                        )
                 return
 
         # Regular /start without parameters
@@ -538,21 +562,55 @@ class ChessBot:
         player_id = user.id
         user_language = user.language_code
 
-        # Create a new game
-        game_id, invite_link = self.game_manager.create_game(player_id)
+        # Check if user already has a waiting game
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
 
-        # Set this as the active game for the player
-        self.set_active_game(player_id, game_id)
-
-        deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
-
-        invite_message = (
-            f"<b>{language_manager.get_message('new_game_created', user.id, user_language)}</b>\n\n"
-            f"<b>{language_manager.get_message('game_id', user.id)}:</b> <code>{game_id}</code>\n"
-            f"<b>{language_manager.get_message('invite_code', user.id)}:</b> <code>{invite_link}</code>\n\n"
-            f"<b>{language_manager.get_message('share_link', user.id)}</b>\n{deep_link}"
+        cursor.execute(
+            """
+            SELECT game_id, invite_link FROM games
+            WHERE player1_id = ? AND player2_id IS NULL AND status = 'waiting'
+            ORDER BY created_at DESC
+            LIMIT 1
+        """,
+            (player_id,),
         )
-        await update.message.reply_text(invite_message, parse_mode="HTML")
+
+        existing_game = cursor.fetchone()
+        conn.close()
+
+        if existing_game:
+            # User already has a waiting game, return the existing link
+            game_id, invite_link = existing_game
+
+            # Set this as the active game for the player
+            self.set_active_game(player_id, game_id)
+
+            deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
+
+            invite_message = (
+                f"<b>{language_manager.get_message('existing_waiting_game', user.id, user_language)}</b>\n\n"
+                f"<b>{language_manager.get_message('game_id', user.id)}:</b> <code>{game_id}</code>\n"
+                f"<b>{language_manager.get_message('invite_code', user.id)}:</b> <code>{invite_link}</code>\n\n"
+                f"<b>{language_manager.get_message('share_link', user.id)}</b>\n{deep_link}"
+            )
+            await update.message.reply_text(invite_message, parse_mode="HTML")
+        else:
+            # Create a new game
+            game_id, invite_link = self.game_manager.create_game(player_id)
+
+            # Set this as the active game for the player
+            self.set_active_game(player_id, game_id)
+
+            deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
+
+            invite_message = (
+                f"<b>{language_manager.get_message('new_game_created', user.id, user_language)}</b>\n\n"
+                f"<b>{language_manager.get_message('game_id', user.id)}:</b> <code>{game_id}</code>\n"
+                f"<b>{language_manager.get_message('invite_code', user.id)}:</b> <code>{invite_link}</code>\n\n"
+                f"<b>{language_manager.get_message('share_link', user.id)}</b>\n{deep_link}"
+            )
+            await update.message.reply_text(invite_message, parse_mode="HTML")
 
     async def join_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Join a game using an invite link."""
@@ -572,7 +630,8 @@ class ChessBot:
         # No need to check if user is already in a game - we support multiple games per user
 
         # Try to join the game
-        game_id, opponent_id = self.game_manager.join_game(invite_link, player_id)
+        result = self.game_manager.join_game(invite_link, player_id)
+        game_id, opponent_id = result if isinstance(result, tuple) and result[1] != "existing_game" else (None, None)
 
         if game_id:
             # Set this as the active game for the player
@@ -603,9 +662,17 @@ class ChessBot:
             except Exception:
                 pass  # Ignore if unable to send message
         else:
-            await update.message.reply_text(
-                language_manager.get_message("invalid_invite", user.id, user_language)
-            )
+            # Check if the reason is existing game
+            if isinstance(result, tuple) and result[1] == "existing_game":
+                await update.message.reply_text(
+                    f"❌ {language_manager.get_message('existing_game_error', user.id, user_language)}\n\n"
+                    f"{language_manager.get_message('check_active_games', user.id)} <code>/active_games</code>",
+                    parse_mode="HTML",
+                )
+            else:
+                await update.message.reply_text(
+                    language_manager.get_message("invalid_invite", user.id, user_language)
+                )
 
     async def handle_move(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle chess moves."""
@@ -972,28 +1039,82 @@ class ChessBot:
 
             cursor.execute(
                 """
-                SELECT g.game_id
+                SELECT g.game_id, g.player1_id, g.player2_id, g.current_turn, g.fen
                 FROM games g
                 WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
                 ORDER BY g.created_at DESC
-                LIMIT 1
             """,
                 (player_id, player_id),
             )
 
-            result = cursor.fetchone()
+            games = cursor.fetchall()
             conn.close()
 
-            if result:
-                # Set the first game as active
-                active_game_id = result[0]
-                self.set_active_game(player_id, active_game_id)
-            else:
+            if not games:
                 await update.message.reply_text(
                     f"❌ {language_manager.get_message('no_active_game', user.id, user_language)}\n"
                     f"{language_manager.get_message('create_own_game', user.id)}",
                     parse_mode="HTML",
                 )
+                return
+
+            # If user has only one active game, set it as current automatically
+            if len(games) == 1:
+                active_game_id = games[0][0]
+                self.set_active_game(player_id, active_game_id)
+            else:
+                # User has multiple games, show them a selection menu
+                response = f"<b>{language_manager.get_message('select_game_to_surrender', user.id, user_language)}</b>\n\n"
+
+                # Create inline keyboard with buttons for each game
+                keyboard = []
+
+                for game_id, player1_id, player2_id, current_turn, fen in games:
+                    # Determine opponent ID
+                    opponent_id = player2_id if player_id == player1_id else player1_id
+
+                    # Get opponent username
+                    try:
+                        opponent_user = await context.bot.get_chat(opponent_id)
+                        opponent_name = opponent_user.username or f"User {opponent_id}"
+                    except Exception:
+                        opponent_name = f"User {opponent_id}"
+
+                    # Determine player color
+                    is_white = player1_id == player_id
+                    player_color = (
+                        language_manager.get_message("white", user.id)
+                        if is_white
+                        else language_manager.get_message("black", user.id)
+                    )
+
+                    # Determine whose turn it is
+                    is_your_turn = current_turn == player_id
+                    turn_message = (
+                        language_manager.get_message("your_turn", user.id)
+                        if is_your_turn
+                        else language_manager.get_message("waiting_opponent", user.id)
+                    )
+
+                    # Format game details
+                    game_details = language_manager.get_message("game_details", user.id) % (
+                        game_id,
+                        opponent_name,
+                        player_color,
+                        turn_message,
+                    )
+
+                    response += f"{game_details}\n\n"
+
+                    # Create a button for this game
+                    button_text = f"{language_manager.get_message('surrender_game', user.id)}: {game_id}"
+                    keyboard.append([InlineKeyboardButton(button_text, callback_data=f"surrender:{game_id}")])
+
+                # Create the inline keyboard markup
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                # Send the message with the inline keyboard
+                await update.message.reply_text(response, parse_mode="HTML", reply_markup=reply_markup)
                 return
 
         # Verify the game exists
@@ -1595,6 +1716,46 @@ class ChessBot:
 
             # Clean up temp file
             os.unlink(png_file)
+
+        # Handle surrender callback
+        elif data.startswith("surrender:"):
+            game_id = data.split(":")[1]
+
+            # Check if the game exists and the user is a participant
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.game_id
+                FROM games g
+                WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+                """,
+                (game_id, player_id, player_id),
+            )
+
+            result = cursor.fetchone()
+            conn.close()
+
+            if not result:
+                await query.edit_message_text(
+                    f"❌ {language_manager.get_message('no_active_game', user.id, user_language)}\n"
+                    f"{language_manager.get_message('create_own_game', user.id)}",
+                    parse_mode="HTML",
+                )
+                return
+
+            # Set the game as active
+            self.set_active_game(player_id, game_id)
+
+            # Store the game_id in user_data for later use in confirm_surrender
+            context.user_data["surrender_game_id"] = game_id
+
+            # Ask for confirmation
+            await query.edit_message_text(
+                language_manager.get_message("confirm_surrender", user.id, user_language),
+                parse_mode="HTML",
+            )
 
     def run(self):
         """Run the bot."""
