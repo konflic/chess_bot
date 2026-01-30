@@ -552,25 +552,6 @@ class ChessBot:
         player_id = user.id
         user_language = user.language_code
 
-        # Check if user is already in a game
-        conn = sqlite3.connect(self.game_manager.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT game_id FROM games
-            WHERE (player1_id = ? OR player2_id = ?) AND status = 'playing'
-        """,
-            (player_id, player_id),
-        )
-        active_game = cursor.fetchone()
-        conn.close()
-
-        if active_game:
-            await update.message.reply_text(
-                f"{language_manager.get_message('already_in_game', user.id, user_language)} ({active_game[0]})!"
-            )
-            return
-
         # Create a new game
         game_id, invite_link = self.game_manager.create_game(player_id)
 
