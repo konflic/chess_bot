@@ -3,7 +3,7 @@ import os
 
 # Bot configuration
 BOT_NAME = "chezz_game_bot"
-BOT_VERSION = "1.0.0"
+BOT_VERSION = "1.0.1"
 
 # Ensure data directory exists
 data_dir = "data"

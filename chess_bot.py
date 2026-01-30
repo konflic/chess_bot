@@ -304,7 +304,10 @@ class ChessBot:
         self.application = Application.builder().token(token).build()
         self.game_manager = ChessGameManager()
         self.setup_handlers()
-        self.setup_commands()
+
+        # Ensure commands are set up properly at initialization
+        import asyncio
+        asyncio.run(self.setup_commands())
 
         # Dictionary to store the last ping time for each user
         self.last_ping = {}  # {user_id: datetime}
@@ -434,7 +437,12 @@ class ChessBot:
             BotCommand("set_active", "Switch between active games"),
         ]
 
-        await self.application.bot.set_my_commands(commands)
+        # Make sure commands are set for all scopes
+        from telegram.constants import BotCommandScopeAllPrivateChats
+        await self.application.bot.set_my_commands(
+            commands,
+            scope=BotCommandScopeAllPrivateChats()
+        )
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle the /start command."""
@@ -1139,7 +1147,7 @@ class ChessBot:
                     button_text = f"{language_manager.get_message('surrender_game', user.id)}: {game_id}"
                     keyboard.append([InlineKeyboardButton(button_text, callback_data=f"surrender:{game_id}")])
 
-                # Create the inline keyboard markup
+                # Create the inline keyboard markup with one-time keyboard
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
                 # Send the message with the inline keyboard
@@ -1586,7 +1594,7 @@ class ChessBot:
             button_text = f"{language_manager.get_message('set_active_game', user.id)}: {game_id}"
             keyboard.append([InlineKeyboardButton(button_text, callback_data=f"set_active:{game_id}")])
 
-        # Create the inline keyboard markup
+        # Create the inline keyboard markup with one-time keyboard
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Send the message with the inline keyboard
@@ -1725,10 +1733,11 @@ class ChessBot:
             # Set the game as active
             self.set_active_game(player_id, game_id)
 
-            # Notify the user
+            # Notify the user and remove the inline keyboard
             await query.edit_message_text(
                 language_manager.get_message("game_set_active", user.id, user_language) % game_id,
-                parse_mode="HTML"
+                parse_mode="HTML",
+                reply_markup=None  # Remove the inline keyboard
             )
 
             # Show the board
@@ -1780,10 +1789,11 @@ class ChessBot:
             # Store the game_id in user_data for later use in confirm_surrender
             context.user_data["surrender_game_id"] = game_id
 
-            # Ask for confirmation
+            # Ask for confirmation and remove the inline keyboard
             await query.edit_message_text(
                 language_manager.get_message("confirm_surrender", user.id, user_language),
                 parse_mode="HTML",
+                reply_markup=None  # Remove the inline keyboard
             )
 
     def run(self):
