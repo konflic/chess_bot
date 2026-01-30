@@ -50,6 +50,13 @@ TRANSLATIONS = {
         "your_turn_exclamation": "Your turn!",
         "invalid_move": "Invalid move:",
 
+        # Ping command
+        "ping_sent": "Reminder sent to your opponent",
+        "ping_received": "Your opponent is waiting for your move",
+        "ping_cooldown": "You can only send a reminder once every 30 minutes",
+        "ping_not_opponent_turn": "It's your turn to move, not your opponent's",
+        "ping_no_game": "You don't have an active game to send a reminder for",
+
         # Game end
         "game_ended": "Game ended.",
         "left_game": "You have left game",
@@ -110,6 +117,13 @@ TRANSLATIONS = {
         "opponent_played": "Соперник сделал ход",
         "your_turn_exclamation": "Ваш ход!",
         "invalid_move": "Недопустимый ход:",
+
+        # Ping command
+        "ping_sent": "Напоминание отправлено вашему сопернику",
+        "ping_received": "Ваш соперник ожидает вашего хода",
+        "ping_cooldown": "Вы можете отправлять напоминание только раз в 30 минут",
+        "ping_not_opponent_turn": "Сейчас ваш ход, а не вашего соперника",
+        "ping_no_game": "У вас нет активной игры, чтобы отправить напоминание",
 
         # Game end
         "game_ended": "Игра окончена.",

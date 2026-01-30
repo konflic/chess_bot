@@ -19,6 +19,7 @@ import cairosvg
 import time
 
 from configuration import BOT_NAME, GAMES_DB, language_manager
+import datetime
 
 
 class ChessGameManager:
@@ -267,6 +268,9 @@ class ChessBot:
         self.setup_handlers()
         self.setup_commands()
 
+        # Dictionary to store the last ping time for each user
+        self.last_ping = {}  # {user_id: datetime}
+
         # Create tmp directory if it doesn't exist
         if not os.path.exists("tmp"):
             os.makedirs("tmp")
@@ -277,6 +281,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("current_game", self.current_game))
         self.application.add_handler(CommandHandler("surrender", self.surrender_game))
+        self.application.add_handler(CommandHandler("ping", self.ping_opponent))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move)
         )
@@ -288,6 +293,7 @@ class ChessBot:
             BotCommand("newgame", "Start a new chess game"),
             BotCommand("current_game", "Show your current game info"),
             BotCommand("surrender", "Surrender current game (forfeit)"),
+            BotCommand("ping", "Notify your opponent it's their turn"),
         ]
 
         await self.application.bot.set_my_commands(commands)
@@ -873,6 +879,80 @@ class ChessBot:
                 print(f"Note: Could not notify opponent {opponent_id}: {e}")
 
             conn.close()
+
+    async def ping_opponent(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Send a reminder to the opponent that it's their turn."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+
+        # Check if user is in an active game
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT g.game_id, g.player1_id, g.player2_id, g.current_turn
+            FROM games g
+            WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+        """,
+            (player_id, player_id),
+        )
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            await update.message.reply_text(
+                language_manager.get_message("ping_no_game", user.id, user_language)
+            )
+            return
+
+        game_id, player1_id, player2_id, current_turn = result
+
+        # Determine opponent ID
+        opponent_id = player2_id if player_id == player1_id else player1_id
+
+        # Check if it's the opponent's turn (not the user's turn)
+        if current_turn == player_id:
+            await update.message.reply_text(
+                language_manager.get_message("ping_not_opponent_turn", user.id, user_language)
+            )
+            return
+
+        # Check if the user has already sent a ping in the last 30 minutes
+        now = datetime.datetime.now()
+        if player_id in self.last_ping:
+            time_since_last_ping = now - self.last_ping[player_id]
+            if time_since_last_ping.total_seconds() < 1800:  # 30 minutes = 1800 seconds
+                await update.message.reply_text(
+                    language_manager.get_message("ping_cooldown", user.id, user_language)
+                )
+                return
+
+        # Update the last ping time
+        self.last_ping[player_id] = now
+
+        # Send notification to the opponent
+        try:
+            # Get the user's username
+            username = user.username or user.first_name
+
+            await context.bot.send_message(
+                chat_id=opponent_id,
+                text=f"🔔 <b>{username}</b> {language_manager.get_message('ping_received', opponent_id)}",
+                parse_mode="HTML",
+            )
+
+            # Confirm to the user that the ping was sent
+            await update.message.reply_text(
+                language_manager.get_message("ping_sent", user.id, user_language)
+            )
+        except Exception as e:
+            print(f"Could not send ping to opponent {opponent_id}: {e}")
+            # If we couldn't send the message, don't count this as a ping
+            if player_id in self.last_ping:
+                del self.last_ping[player_id]
 
     def run(self):
         """Run the bot."""
