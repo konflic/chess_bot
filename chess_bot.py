@@ -18,7 +18,7 @@ import os
 import cairosvg
 import time
 
-from configuration import BOT_NAME, GAMES_DB, language_manager
+from configuration import BOT_NAME, BOT_VERSION, GAMES_DB, language_manager
 import datetime
 
 
@@ -542,7 +542,7 @@ class ChessBot:
 
         # Regular /start without parameters
         welcome_message = (
-            f"<b>{language_manager.get_message('welcome_title', user.id, user_language)}</b>\n\n"
+            f"<b>{language_manager.get_message('welcome_title', user.id, user_language)}</b> v{BOT_VERSION}\n\n"
             f"{language_manager.get_message('welcome_intro', user.id, user_language)}\n\n"
             f"<b>{language_manager.get_message('welcome_quick_start', user.id, user_language)}</b>\n"
             f"{language_manager.get_message('welcome_newgame', user.id)}\n"
@@ -563,7 +563,7 @@ class ChessBot:
         user_language = user.language_code
 
         help_text = (
-            f"<b>{language_manager.get_message('help_title', user.id, user_language)}</b>\n\n"
+            f"<b>{language_manager.get_message('help_title', user.id, user_language)}</b> v{BOT_VERSION}\n\n"
             f"<b>{language_manager.get_message('help_game_commands', user.id, user_language)}</b>\n"
             f"/newgame - {language_manager.get_message('help_newgame', user.id, user_language)}\n"
             f"/current_game - {language_manager.get_message('help_current_game', user.id, user_language)}\n"
@@ -1788,5 +1788,5 @@ class ChessBot:
 
     def run(self):
         """Run the bot."""
-        print("Starting chess bot...")
+        print(f"Starting chess bot v{BOT_VERSION}...")
         self.application.run_polling(allowed_updates=Update.ALL_TYPES)

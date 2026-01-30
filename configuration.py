@@ -1,7 +1,9 @@
 from languages import LanguageManager
 import os
 
+# Bot configuration
 BOT_NAME = "chezz_game_bot"
+BOT_VERSION = "1.0.0"
 
 # Ensure data directory exists
 data_dir = "data"
