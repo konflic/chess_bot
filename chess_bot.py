@@ -394,6 +394,7 @@ class ChessBot:
     def setup_handlers(self):
         """Set up command handlers."""
         self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("current_game", self.current_game))
         self.application.add_handler(
@@ -422,13 +423,15 @@ class ChessBot:
     async def setup_commands(self):
         """Set up bot commands menu in Telegram interface."""
         commands = [
-            BotCommand("start", "Show welcome message and instructions"),
-            BotCommand("newgame", "Start a new chess game"),
-            BotCommand("current_game", "Show your current active game info"),
-            BotCommand("active_games", "Show all your active games"),
-            BotCommand("board", "Show the current board state"),
-            BotCommand("surrender", "Surrender current game (forfeit)"),
-            BotCommand("ping", "Notify your opponent it's their turn"),
+            BotCommand("start", "🏁 Start bot and see main menu"),
+            BotCommand("help", "❓ Show all available commands"),
+            BotCommand("newgame", "🎮 Create a new chess game"),
+            BotCommand("current_game", "♟️ Show your current active game"),
+            BotCommand("active_games", "📋 List all your active games"),
+            BotCommand("board", "🖼️ Display the current board"),
+            BotCommand("ping", "🔔 Remind opponent it's their turn"),
+            BotCommand("surrender", "🏳️ Surrender current game"),
+            BotCommand("set_active", "🎯 Switch between active games"),
         ]
 
         await self.application.bot.set_my_commands(commands)
@@ -540,21 +543,61 @@ class ChessBot:
         # Regular /start without parameters
         welcome_message = (
             f"<b>{language_manager.get_message('welcome_title', user.id, user_language)}</b>\n\n"
-            f"<b>{language_manager.get_message('welcome_commands', user.id)}</b>\n"
-            f"{language_manager.get_message('welcome_newgame', user.id)}\n"
-            f"{language_manager.get_message('welcome_current_game', user.id)}\n"
-            f"{language_manager.get_message('welcome_leave', user.id)}\n\n"
+            f"{language_manager.get_message('welcome_intro', user.id, user_language)}\n\n"
+            f"<b>{language_manager.get_message('welcome_quick_start', user.id, user_language)}</b>\n"
+            f"🎮 {language_manager.get_message('welcome_newgame', user.id)}\n"
+            f"♟️ {language_manager.get_message('welcome_current_game', user.id)}\n"
+            f"❓ {language_manager.get_message('welcome_help', user.id)}\n\n"
             f"<b>{language_manager.get_message('welcome_how_to_play', user.id)}</b>\n"
             f"{language_manager.get_message('welcome_move_format', user.id)}"
         )
 
-        # Create a keyboard with common commands
-        keyboard = [["/newgame", "/current_game"], ["/active_games", "/surrender"]]
+        # Create an improved keyboard with common commands
+        keyboard = [
+            ["🎮 /newgame", "♟️ /current_game"],
+            ["📋 /active_games", "❓ /help"],
+            ["🖼️ /board", "🔔 /ping"]
+        ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
         await update.message.reply_text(
             welcome_message, parse_mode="HTML", reply_markup=reply_markup
         )
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Display help information with all available commands."""
+        user = update.effective_user
+        user_language = user.language_code
+
+        help_text = (
+            f"<b>{language_manager.get_message('help_title', user.id, user_language)}</b>\n\n"
+            f"<b>{language_manager.get_message('help_game_commands', user.id, user_language)}</b>\n"
+            f"/newgame - {language_manager.get_message('help_newgame', user.id, user_language)}\n"
+            f"/current_game - {language_manager.get_message('help_current_game', user.id, user_language)}\n"
+            f"/active_games - {language_manager.get_message('help_active_games', user.id, user_language)}\n"
+            f"/set_active - {language_manager.get_message('help_set_active', user.id, user_language)}\n"
+            f"/board - {language_manager.get_message('help_board', user.id, user_language)}\n\n"
+            f"<b>{language_manager.get_message('help_interaction_commands', user.id, user_language)}</b>\n"
+            f"/ping - {language_manager.get_message('help_ping', user.id, user_language)}\n"
+            f"/surrender - {language_manager.get_message('help_surrender', user.id, user_language)}\n\n"
+            f"<b>{language_manager.get_message('help_how_to_play', user.id, user_language)}</b>\n"
+            f"{language_manager.get_message('help_move_format', user.id, user_language)}\n\n"
+            f"<b>{language_manager.get_message('help_examples', user.id, user_language)}</b>\n"
+            f"• e2e4 - {language_manager.get_message('help_example_pawn', user.id, user_language)}\n"
+            f"• Nf3 - {language_manager.get_message('help_example_knight', user.id, user_language)}\n"
+            f"• O-O - {language_manager.get_message('help_example_castle', user.id, user_language)}\n"
+            f"• Qxf7 - {language_manager.get_message('help_example_capture', user.id, user_language)}"
+        )
+
+        # Create a keyboard with common commands
+        keyboard = [
+            ["/newgame", "/current_game"],
+            ["/active_games", "/board"],
+            ["/ping", "/surrender"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+        await update.message.reply_text(help_text, parse_mode="HTML", reply_markup=reply_markup)
 
     async def new_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start a new game."""
