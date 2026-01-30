@@ -70,8 +70,7 @@ TRANSLATIONS = {
         "confirm_surrender": "Are you sure you want to surrender this game? Your opponent will win. Reply with /confirm_surrender to confirm or /cancel to continue playing.",
         "surrender_cancelled": "Surrender cancelled. The game continues!",
         "active_games": "Your active games:",
-        "game_details": "Game ID: %s | Opponent: %s | You play as: %s | Turn: %s",
-        "set_active_game": "Set as active game",
+        "game_details": "Game ID: %s | Opponent: %s | You play as: %s\nTurn: %s",
         "game_set_active": "Game %s is now your active game.",
         "checkmate_win": "Checkmate! You win!",
         "checkmate_lose": "Checkmate! You lose!",
@@ -87,7 +86,6 @@ TRANSLATIONS = {
         "help_newgame": "Create a new chess game",
         "help_current_game": "Show your current active game",
         "help_active_games": "List all your active games",
-        "help_set_active": "Switch between your active games",
         "help_board": "Display the current board state",
         "help_interaction_commands": "Interaction Commands",
         "help_ping": "Remind opponent it's their turn",
@@ -168,7 +166,7 @@ TRANSLATIONS = {
         "confirm_surrender": "Вы уверены, что хотите сдаться? Ваш соперник победит. Ответьте /confirm_surrender для подтверждения или /cancel для продолжения игры.",
         "surrender_cancelled": "Сдача отменена. Игра продолжается!",
         "active_games": "Ваши активные игры:",
-        "game_details": "ID игры: %s | Соперник: %s | Вы играете: %s | Ход: %s",
+        "game_details": "ID игры: %s | Соперник: %s | Вы играете: %s\nХод: %s",
         "set_active_game": "Сделать активной игрой",
         "game_set_active": "Игра %s теперь ваша активная игра.",
         "checkmate_win": "Шах и мат! Вы выиграли!",
@@ -185,7 +183,6 @@ TRANSLATIONS = {
         "help_newgame": "Создать новую шахматную игру",
         "help_current_game": "Показать вашу текущую активную игру",
         "help_active_games": "Список всех ваших активных игр",
-        "help_set_active": "Переключиться между вашими активными играми",
         "help_board": "Отобразить текущее состояние доски",
         "help_interaction_commands": "Команды взаимодействия",
         "help_ping": "Напомнить сопернику о его ходе",
@@ -205,9 +202,7 @@ TRANSLATIONS = {
 class LanguageManager:
     def __init__(self):
         self.default_language = "en"
-        self.user_languages = (
-            {}
-        )  # Store user language preferences: {user_id: language_code}
+        self.user_languages = {}  # Store user language preferences: {user_id: language_code}
 
     def get_user_language(self, user_id, language_code=None):
         """
