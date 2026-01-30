@@ -5,7 +5,7 @@ import random
 import string
 import chess
 import chess.svg
-from telegram import Update, BotCommand, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -423,15 +423,15 @@ class ChessBot:
     async def setup_commands(self):
         """Set up bot commands menu in Telegram interface."""
         commands = [
-            BotCommand("start", "🏁 Start bot and see main menu"),
-            BotCommand("help", "❓ Show all available commands"),
-            BotCommand("newgame", "🎮 Create a new chess game"),
-            BotCommand("current_game", "♟️ Show your current active game"),
-            BotCommand("active_games", "📋 List all your active games"),
-            BotCommand("board", "🖼️ Display the current board"),
-            BotCommand("ping", "🔔 Remind opponent it's their turn"),
-            BotCommand("surrender", "🏳️ Surrender current game"),
-            BotCommand("set_active", "🎯 Switch between active games"),
+            BotCommand("start", "Start bot and see main menu"),
+            BotCommand("help", "Show all available commands"),
+            BotCommand("newgame", "Create a new chess game"),
+            BotCommand("current_game", "Show your current active game"),
+            BotCommand("active_games", "List all your active games"),
+            BotCommand("board", "Display the current board"),
+            BotCommand("ping", "Remind opponent it's their turn"),
+            BotCommand("surrender", "Surrender current game"),
+            BotCommand("set_active", "Switch between active games"),
         ]
 
         await self.application.bot.set_my_commands(commands)
@@ -545,23 +545,16 @@ class ChessBot:
             f"<b>{language_manager.get_message('welcome_title', user.id, user_language)}</b>\n\n"
             f"{language_manager.get_message('welcome_intro', user.id, user_language)}\n\n"
             f"<b>{language_manager.get_message('welcome_quick_start', user.id, user_language)}</b>\n"
-            f"🎮 {language_manager.get_message('welcome_newgame', user.id)}\n"
-            f"♟️ {language_manager.get_message('welcome_current_game', user.id)}\n"
-            f"❓ {language_manager.get_message('welcome_help', user.id)}\n\n"
+            f"{language_manager.get_message('welcome_newgame', user.id)}\n"
+            f"{language_manager.get_message('welcome_current_game', user.id)}\n"
+            f"{language_manager.get_message('welcome_help', user.id)}\n\n"
             f"<b>{language_manager.get_message('welcome_how_to_play', user.id)}</b>\n"
-            f"{language_manager.get_message('welcome_move_format', user.id)}"
+            f"{language_manager.get_message('welcome_move_format', user.id)}\n\n"
+            f"<i>{language_manager.get_message('command_menu_hint', user.id, user_language)}</i>"
         )
 
-        # Create an improved keyboard with common commands
-        keyboard = [
-            ["🎮 /newgame", "♟️ /current_game"],
-            ["📋 /active_games", "❓ /help"],
-            ["🖼️ /board", "🔔 /ping"]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
         await update.message.reply_text(
-            welcome_message, parse_mode="HTML", reply_markup=reply_markup
+            welcome_message, parse_mode="HTML"
         )
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -586,18 +579,11 @@ class ChessBot:
             f"• e2e4 - {language_manager.get_message('help_example_pawn', user.id, user_language)}\n"
             f"• Nf3 - {language_manager.get_message('help_example_knight', user.id, user_language)}\n"
             f"• O-O - {language_manager.get_message('help_example_castle', user.id, user_language)}\n"
-            f"• Qxf7 - {language_manager.get_message('help_example_capture', user.id, user_language)}"
+            f"• Qxf7 - {language_manager.get_message('help_example_capture', user.id, user_language)}\n\n"
+            f"<i>{language_manager.get_message('command_menu_hint', user.id, user_language)}</i>"
         )
 
-        # Create a keyboard with common commands
-        keyboard = [
-            ["/newgame", "/current_game"],
-            ["/active_games", "/board"],
-            ["/ping", "/surrender"]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-        await update.message.reply_text(help_text, parse_mode="HTML", reply_markup=reply_markup)
+        await update.message.reply_text(help_text, parse_mode="HTML")
 
     async def new_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start a new game."""
