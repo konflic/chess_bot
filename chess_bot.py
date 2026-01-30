@@ -301,13 +301,15 @@ class ChessBot:
         with open(token_file, "r") as f:
             token = f.read().strip()
 
-        self.application = Application.builder().token(token).build()
+        # Create application with post_init hook for setting up commands
+        self.application = (
+            Application.builder()
+            .token(token)
+            .post_init(self.post_init_tasks)
+            .build()
+        )
         self.game_manager = ChessGameManager()
         self.setup_handlers()
-
-        # Ensure commands are set up properly at initialization
-        import asyncio
-        asyncio.run(self.setup_commands())
 
         # Dictionary to store the last ping time for each user
         self.last_ping = {}  # {user_id: datetime}
@@ -423,8 +425,8 @@ class ChessBot:
             CallbackQueryHandler(self.button_callback)
         )
 
-    async def setup_commands(self):
-        """Set up bot commands menu in Telegram interface."""
+    async def post_init_tasks(self, application: Application) -> None:
+        """Tasks to run after the bot is initialized but before polling starts."""
         commands = [
             BotCommand("start", "Start bot and see main menu"),
             BotCommand("help", "Show all available commands"),
@@ -437,12 +439,8 @@ class ChessBot:
             BotCommand("set_active", "Switch between active games"),
         ]
 
-        # Make sure commands are set for all scopes
-        from telegram.constants import BotCommandScopeAllPrivateChats
-        await self.application.bot.set_my_commands(
-            commands,
-            scope=BotCommandScopeAllPrivateChats()
-        )
+        await application.bot.set_my_commands(commands)
+        print(f"Bot commands have been set for v{BOT_VERSION}")
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle the /start command."""
