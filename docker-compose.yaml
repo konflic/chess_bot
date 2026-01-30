@@ -4,10 +4,13 @@ services:
     restart: always
     volumes:
       - ./tmp:/bot/tmp
+      - ./data:/bot/data
     build:
       context: .
       dockerfile: Dockerfile
 
 volumes:
   tmp:
+    external: true
+  data:
     external: true

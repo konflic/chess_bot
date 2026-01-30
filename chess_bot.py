@@ -63,6 +63,17 @@ class ChessGameManager:
         """
         )
 
+        # Create ping_history table to store ping timestamps
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ping_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER UNIQUE,
+                last_ping_time TIMESTAMP
+            )
+        """
+        )
+
         conn.commit()
         conn.close()
 
@@ -271,9 +282,26 @@ class ChessBot:
         # Dictionary to store the last ping time for each user
         self.last_ping = {}  # {user_id: datetime}
 
+        # Load ping history from database
+        self.load_ping_history()
+
         # Create tmp directory if it doesn't exist
         if not os.path.exists("tmp"):
             os.makedirs("tmp")
+
+    def load_ping_history(self):
+        """Load ping history from the database."""
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT player_id, last_ping_time FROM ping_history")
+        results = cursor.fetchall()
+
+        for player_id, last_ping_time in results:
+            # Convert string timestamp to datetime object
+            self.last_ping[player_id] = datetime.datetime.fromisoformat(last_ping_time)
+
+        conn.close()
 
     def setup_handlers(self):
         """Set up command handlers."""
@@ -282,6 +310,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("current_game", self.current_game))
         self.application.add_handler(CommandHandler("surrender", self.surrender_game))
         self.application.add_handler(CommandHandler("ping", self.ping_opponent))
+        self.application.add_handler(CommandHandler("board", self.show_board))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move)
         )
@@ -292,6 +321,7 @@ class ChessBot:
             BotCommand("start", "Show welcome message and instructions"),
             BotCommand("newgame", "Start a new chess game"),
             BotCommand("current_game", "Show your current game info"),
+            BotCommand("board", "Show the current board state"),
             BotCommand("surrender", "Surrender current game (forfeit)"),
             BotCommand("ping", "Notify your opponent it's their turn"),
         ]
@@ -811,6 +841,7 @@ class ChessBot:
             f"\n{language_manager.get_message('started_at', user.id)}: {created_at}"
             f"\n{language_manager.get_message('you_are', user.id)}: {player_color}"
             f"\n{language_manager.get_message('current_turn', user.id)}: {turn_message}"
+            f"\n\n{language_manager.get_message('board_command', user.id)}"
         )
 
         await update.message.reply_text(game_info_message, parse_mode="HTML")
@@ -930,8 +961,24 @@ class ChessBot:
                 )
                 return
 
-        # Update the last ping time
+        # Update the last ping time in memory
         self.last_ping[player_id] = now
+
+        # Update the last ping time in the database
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        # Use REPLACE to handle both insert and update cases
+        cursor.execute(
+            """
+            REPLACE INTO ping_history (player_id, last_ping_time)
+            VALUES (?, ?)
+        """,
+            (player_id, now.isoformat()),
+        )
+
+        conn.commit()
+        conn.close()
 
         # Send notification to the opponent
         try:
@@ -953,6 +1000,60 @@ class ChessBot:
             # If we couldn't send the message, don't count this as a ping
             if player_id in self.last_ping:
                 del self.last_ping[player_id]
+
+                # Also remove from database
+                conn = sqlite3.connect(self.game_manager.db_path)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM ping_history WHERE player_id = ?", (player_id,))
+                conn.commit()
+                conn.close()
+
+    async def show_board(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show the current board state."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+
+        # Find the user's active game
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT g.game_id, g.fen
+            FROM games g
+            WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+        """,
+            (player_id, player_id),
+        )
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            await update.message.reply_text(
+                language_manager.get_message("no_active_board", user.id, user_language)
+            )
+            return
+
+        game_id, fen = result
+
+        # Create the board
+        board = chess.Board(fen)
+
+        # Get PNG file path
+        png_file = self.render_board(board, game_id)
+
+        # Send the board image
+        with open(png_file, "rb") as f:
+            await update.message.reply_photo(
+                photo=f,
+                caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {game_id}",
+                parse_mode="HTML",
+            )
+
+        # Clean up temp file
+        os.unlink(png_file)
 
     def run(self):
         """Run the bot."""

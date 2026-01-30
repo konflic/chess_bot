@@ -50,6 +50,10 @@ TRANSLATIONS = {
         "your_turn_exclamation": "Your turn!",
         "invalid_move": "Invalid move:",
 
+        # Board command
+        "board_command": "Use /board to see the current board",
+        "no_active_board": "You don't have an active game to show the board for",
+
         # Ping command
         "ping_sent": "Reminder sent to your opponent",
         "ping_received": "Your opponent is waiting for your move",
@@ -117,6 +121,10 @@ TRANSLATIONS = {
         "opponent_played": "Соперник сделал ход",
         "your_turn_exclamation": "Ваш ход!",
         "invalid_move": "Недопустимый ход:",
+
+        # Board command
+        "board_command": "Используйте /board чтобы увидеть текущую доску",
+        "no_active_board": "У вас нет активной игры, чтобы показать доску",
 
         # Ping command
         "ping_sent": "Напоминание отправлено вашему сопернику",
