@@ -5,7 +5,7 @@ import random
 import string
 import chess
 import chess.svg
-from telegram import Update, BotCommand, ReplyKeyboardMarkup
+from telegram import Update, BotCommand, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -396,6 +396,12 @@ class ChessBot:
         self.application.add_handler(CommandHandler("board", self.show_board))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move)
+        )
+
+        # Add callback query handler for inline buttons
+        from telegram.ext import CallbackQueryHandler
+        self.application.add_handler(
+            CallbackQueryHandler(self.button_callback)
         )
 
     async def setup_commands(self):
@@ -1383,6 +1389,9 @@ class ChessBot:
         # Build the response message
         response = f"<b>{language_manager.get_message('active_games', user.id, user_language)}</b>\n\n"
 
+        # Create inline keyboard with buttons for each game
+        keyboard = []
+
         for game_id, player1_id, player2_id, current_turn, fen in games:
             # Determine opponent ID
             opponent_id = player2_id if player_id == player1_id else player1_id
@@ -1421,10 +1430,17 @@ class ChessBot:
                 turn_message,
             )
 
-            response += f"{active_marker}{game_details}\n"
-            response += f"/set_active {game_id} - {language_manager.get_message('set_active_game', user.id)}\n\n"
+            response += f"{active_marker}{game_details}\n\n"
 
-        await update.message.reply_text(response, parse_mode="HTML")
+            # Create a button for this game
+            button_text = f"{language_manager.get_message('set_active_game', user.id)}: {game_id}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"set_active:{game_id}")])
+
+        # Create the inline keyboard markup
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Send the message with the inline keyboard
+        await update.message.reply_text(response, parse_mode="HTML", reply_markup=reply_markup)
 
         # If there's an active game, show the board
         if active_game_id:
@@ -1513,6 +1529,72 @@ class ChessBot:
 
         # Clean up temp file
         os.unlink(png_file)
+
+    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle button callbacks from inline keyboards."""
+        query = update.callback_query
+        user = query.from_user
+        player_id = user.id
+        user_language = user.language_code
+
+        # Answer the callback query to stop the loading animation
+        await query.answer()
+
+        # Extract the callback data
+        data = query.data
+
+        # Handle set_active callback
+        if data.startswith("set_active:"):
+            game_id = data.split(":")[1]
+
+            # Check if the game exists and the user is a participant
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.fen
+                FROM games g
+                WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+                """,
+                (game_id, player_id, player_id),
+            )
+
+            result = cursor.fetchone()
+            conn.close()
+
+            if not result:
+                await query.edit_message_text(
+                    language_manager.get_message("no_active_games", user.id, user_language),
+                    parse_mode="HTML"
+                )
+                return
+
+            fen = result[0]
+
+            # Set the game as active
+            self.set_active_game(player_id, game_id)
+
+            # Notify the user
+            await query.edit_message_text(
+                language_manager.get_message("game_set_active", user.id, user_language) % game_id,
+                parse_mode="HTML"
+            )
+
+            # Show the board
+            board = chess.Board(fen)
+            png_file = self.render_board(board, game_id)
+
+            with open(png_file, "rb") as f:
+                await context.bot.send_photo(
+                    chat_id=player_id,
+                    photo=f,
+                    caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {game_id}",
+                    parse_mode="HTML",
+                )
+
+            # Clean up temp file
+            os.unlink(png_file)
 
     def run(self):
         """Run the bot."""
