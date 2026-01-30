@@ -427,28 +427,8 @@ class ChessBot:
             if payload.startswith("join_"):
                 invite_link = payload[5:]  # Remove "join_" prefix
 
-                # Check if user is already in a game
-                conn = sqlite3.connect(self.game_manager.db_path)
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT game_id FROM games
-                    WHERE (player1_id = ? OR player2_id = ?) AND status = 'playing'
-                """,
-                    (user.id, user.id),
-                )
-                active_game = cursor.fetchone()
-                conn.close()
-
-                if active_game:
-                    await update.message.reply_text(
-                        f"⚠️ {language_manager.get_message('already_in_game', user.id, user_language)}\n"
-                        f"{language_manager.get_message('game_id', user.id)}: `{active_game[0]}`\n"
-                        f"{language_manager.get_message('use_current_game', user.id)}\n"
-                        f"{language_manager.get_message('or_leave', user.id)}",
-                        parse_mode="HTML",
-                    )
-                    return
+                # We don't need to check if the user is already in a game anymore
+                # since we support multiple games per user
 
                 # Try to join the game
                 game_id, opponent_id = self.game_manager.join_game(invite_link, user.id)
@@ -583,24 +563,7 @@ class ChessBot:
 
         invite_link = context.args[0]
 
-        # Check if user is already in a game
-        conn = sqlite3.connect(self.game_manager.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT game_id FROM games
-            WHERE (player1_id = ? OR player2_id = ?) AND status = 'playing'
-        """,
-            (player_id, player_id),
-        )
-        active_game = cursor.fetchone()
-        conn.close()
-
-        if active_game:
-            await update.message.reply_text(
-                f"{language_manager.get_message('already_in_game', user.id, user_language)} ({active_game[0]})!"
-            )
-            return
+        # No need to check if user is already in a game - we support multiple games per user
 
         # Try to join the game
         game_id, opponent_id = self.game_manager.join_game(invite_link, player_id)
