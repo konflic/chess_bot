@@ -71,6 +71,7 @@ TRANSLATIONS = {
         "surrender_cancelled": "Surrender cancelled. The game continues!",
         "active_games": "Your active games:",
         "game_details": "Game ID: %s | Opponent: %s | You play as: %s\nTurn: %s",
+        "set_active_game": "Set as active game",
         "game_set_active": "Game %s is now your active game.",
         "checkmate_win": "Checkmate! You win!",
         "checkmate_lose": "Checkmate! You lose!",
@@ -202,7 +203,9 @@ TRANSLATIONS = {
 class LanguageManager:
     def __init__(self):
         self.default_language = "en"
-        self.user_languages = {}  # Store user language preferences: {user_id: language_code}
+        self.user_languages = (
+            {}
+        )  # Store user language preferences: {user_id: language_code}
 
     def get_user_language(self, user_id, language_code=None):
         """
