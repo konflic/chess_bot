@@ -276,7 +276,6 @@ class ChessBot:
         """Set up command handlers."""
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
-        self.application.add_handler(CommandHandler("join", self.join_game))
         self.application.add_handler(CommandHandler("current_game", self.current_game))
         self.application.add_handler(CommandHandler("leave", self.leave_game))
         self.application.add_handler(
@@ -288,7 +287,6 @@ class ChessBot:
         commands = [
             BotCommand("start", "Show welcome message and instructions"),
             BotCommand("newgame", "Start a new chess game"),
-            BotCommand("join", "Join a game using invite code"),
             BotCommand("current_game", "Show your current game info"),
             BotCommand("leave", "Leave current game (forfeit)"),
         ]
@@ -397,7 +395,6 @@ class ChessBot:
             f"<b>{language_manager.get_message('welcome_title', user.id, user_language)}</b>\n\n"
             f"<b>{language_manager.get_message('welcome_commands', user.id)}</b>\n"
             f"{language_manager.get_message('welcome_newgame', user.id)}\n"
-            f"{language_manager.get_message('welcome_join', user.id)}\n"
             f"{language_manager.get_message('welcome_current_game', user.id)}\n"
             f"{language_manager.get_message('welcome_leave', user.id)}\n\n"
             f"<b>{language_manager.get_message('welcome_how_to_play', user.id)}</b>\n"
@@ -407,7 +404,7 @@ class ChessBot:
         # Create a keyboard with common commands
         keyboard = [
             ["/newgame", "/current_game"],
-            ["/join", "/leave"]
+            ["/leave"]
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -451,8 +448,7 @@ class ChessBot:
             f"<b>{language_manager.get_message('new_game_created', user.id, user_language)}</b>\n\n"
             f"<b>{language_manager.get_message('game_id', user.id)}:</b> <code>{game_id}</code>\n"
             f"<b>{language_manager.get_message('invite_code', user.id)}:</b> <code>{invite_link}</code>\n\n"
-            f"<b>{language_manager.get_message('share_link', user.id)}</b>\n{deep_link}\n\n"
-            f"<b>{language_manager.get_message('or_they_can_use', user.id)}</b>\n<code>/join {invite_link}</code>"
+            f"<b>{language_manager.get_message('share_link', user.id)}</b>\n{deep_link}"
         )
         await update.message.reply_text(invite_message, parse_mode="HTML")
 
