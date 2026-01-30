@@ -17,7 +17,6 @@ import re
 import os
 import cairosvg
 import time
-import random
 
 from configuration import BOT_NAME, GAMES_DB, language_manager
 
@@ -277,7 +276,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("current_game", self.current_game))
-        self.application.add_handler(CommandHandler("leave", self.leave_game))
+        self.application.add_handler(CommandHandler("surrender", self.surrender_game))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move)
         )
@@ -288,7 +287,7 @@ class ChessBot:
             BotCommand("start", "Show welcome message and instructions"),
             BotCommand("newgame", "Start a new chess game"),
             BotCommand("current_game", "Show your current game info"),
-            BotCommand("leave", "Leave current game (forfeit)"),
+            BotCommand("surrender", "Surrender current game (forfeit)"),
         ]
 
         await self.application.bot.set_my_commands(commands)
@@ -338,7 +337,13 @@ class ChessBot:
                     # Determine if user is white or black
                     game_info = self.game_manager.get_game(game_id)
                     is_white = game_info["player1_id"] == user.id
-                    color = language_manager.get_message('white', user.id, user_language) if is_white else language_manager.get_message('black', user.id, user_language)
+                    color = (
+                        language_manager.get_message("white", user.id, user_language)
+                        if is_white
+                        else language_manager.get_message(
+                            "black", user.id, user_language
+                        )
+                    )
 
                     with open("start.png", "rb") as f:
                         await update.message.reply_photo(
@@ -348,9 +353,11 @@ class ChessBot:
                                 f"{language_manager.get_message('game_id', user.id)}: `{game_id}`\n"
                                 f"{language_manager.get_message('you_are', user.id)} {color}\n\n"
                                 + (
-                                    language_manager.get_message('your_turn', user.id)
+                                    language_manager.get_message("your_turn", user.id)
                                     if is_white
-                                    else language_manager.get_message('waiting_opponent', user.id)
+                                    else language_manager.get_message(
+                                        "waiting_opponent", user.id
+                                    )
                                 )
                             ),
                             parse_mode="HTML",
@@ -359,7 +366,11 @@ class ChessBot:
                     # Notify the other player
                     if opponent_id:
                         # Get opponent's language preference
-                        opponent_color = language_manager.get_message('black', opponent_id) if is_white else language_manager.get_message('white', opponent_id)
+                        opponent_color = (
+                            language_manager.get_message("black", opponent_id)
+                            if is_white
+                            else language_manager.get_message("white", opponent_id)
+                        )
                         try:
                             with open("start.png", "rb") as f:
                                 await context.bot.send_photo(
@@ -370,9 +381,13 @@ class ChessBot:
                                         f"{language_manager.get_message('game_id', opponent_id)}: `{game_id}`\n"
                                         f"{language_manager.get_message('you_are', opponent_id)} {opponent_color}\n\n"
                                         + (
-                                            language_manager.get_message('your_turn', opponent_id)
+                                            language_manager.get_message(
+                                                "your_turn", opponent_id
+                                            )
                                             if not is_white
-                                            else language_manager.get_message('waiting_opponent', opponent_id)
+                                            else language_manager.get_message(
+                                                "waiting_opponent", opponent_id
+                                            )
                                         )
                                     ),
                                     parse_mode="HTML",
@@ -402,16 +417,11 @@ class ChessBot:
         )
 
         # Create a keyboard with common commands
-        keyboard = [
-            ["/newgame", "/current_game"],
-            ["/leave"]
-        ]
+        keyboard = [["/newgame", "/current_game"], ["/surrender"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
         await update.message.reply_text(
-            welcome_message,
-            parse_mode="HTML",
-            reply_markup=reply_markup
+            welcome_message, parse_mode="HTML", reply_markup=reply_markup
         )
 
     async def new_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -460,7 +470,9 @@ class ChessBot:
 
         # Check if user provided an invite link
         if len(context.args) != 1:
-            await update.message.reply_text(language_manager.get_message('join_usage', user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message("invalid_invite", user.id, user_language)
+            )
             return
 
         invite_link = context.args[0]
@@ -514,7 +526,9 @@ class ChessBot:
             except Exception:
                 pass  # Ignore if unable to send message
         else:
-            await update.message.reply_text(language_manager.get_message('invalid_invite', user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message("invalid_invite", user.id, user_language)
+            )
 
     async def handle_move(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle chess moves."""
@@ -541,7 +555,9 @@ class ChessBot:
 
         if not result:
             await update.message.reply_text(
-                language_manager.get_message('not_in_active_game', user.id, user_language)
+                language_manager.get_message(
+                    "not_in_active_game", user.id, user_language
+                )
             )
             return
 
@@ -562,9 +578,9 @@ class ChessBot:
 
             # Determine who's turn it is now
             current_player = (
-                language_manager.get_message('white', user.id)
+                language_manager.get_message("white", user.id)
                 if game_info["current_turn"] == game_info["player1_id"]
-                else language_manager.get_message('black', user.id)
+                else language_manager.get_message("black", user.id)
             )
 
             # Check if game is finished
@@ -579,7 +595,9 @@ class ChessBot:
                 if result["winner"] == "draw":
                     # DRAW - notify both players
                     player_caption = f"🏁 {language_manager.get_message('game_draw', user.id, user_language)}"
-                    opponent_caption = f"🏁 {language_manager.get_message('game_draw', opponent_id)}"
+                    opponent_caption = (
+                        f"🏁 {language_manager.get_message('game_draw', opponent_id)}"
+                    )
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
@@ -683,7 +701,9 @@ class ChessBot:
                 except Exception:
                     pass  # Ignore if unable to send message
         else:
-            await update.message.reply_text(f"{language_manager.get_message('invalid_move', user.id, user_language)} {result['error']}")
+            await update.message.reply_text(
+                f"{language_manager.get_message('invalid_move', user.id, user_language)} {result['error']}"
+            )
 
     def is_valid_move_format(self, move_text):
         """Check if the move format is potentially valid."""
@@ -743,7 +763,7 @@ class ChessBot:
 
         if not result:
             await update.message.reply_text(
-                language_manager.get_message('no_active_games', user.id, user_language)
+                language_manager.get_message("no_active_games", user.id, user_language)
             )
             return
 
@@ -771,8 +791,8 @@ class ChessBot:
 
         await update.message.reply_text(game_info_message)
 
-    async def leave_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Leave the current game immediately."""
+    async def surrender_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Surrender the current game immediately."""
         user = update.effective_user
         player_id = user.id
         user_language = user.language_code
