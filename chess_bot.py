@@ -74,6 +74,18 @@ class ChessGameManager:
         """
         )
 
+        # Create active_games table to track which game is active for each user
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS active_games (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER UNIQUE,
+                active_game_id TEXT,
+                FOREIGN KEY (active_game_id) REFERENCES games (game_id)
+            )
+        """
+        )
+
         conn.commit()
         conn.close()
 
@@ -282,8 +294,12 @@ class ChessBot:
         # Dictionary to store the last ping time for each user
         self.last_ping = {}  # {user_id: datetime}
 
-        # Load ping history from database
+        # Dictionary to store active game for each user
+        self.active_games = {}  # {user_id: game_id}
+
+        # Load ping history and active games from database
         self.load_ping_history()
+        self.load_active_games()
 
         # Create tmp directory if it doesn't exist
         if not os.path.exists("tmp"):
@@ -303,13 +319,78 @@ class ChessBot:
 
         conn.close()
 
+    def load_active_games(self):
+        """Load active games from the database."""
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT player_id, active_game_id FROM active_games")
+        results = cursor.fetchall()
+
+        for player_id, active_game_id in results:
+            self.active_games[player_id] = active_game_id
+
+        conn.close()
+
+    def set_active_game(self, player_id, game_id):
+        """Set the active game for a player."""
+        # Update in memory
+        self.active_games[player_id] = game_id
+
+        # Update in database
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            REPLACE INTO active_games (player_id, active_game_id)
+            VALUES (?, ?)
+            """,
+            (player_id, game_id),
+        )
+
+        conn.commit()
+        conn.close()
+
+    def get_active_game(self, player_id):
+        """Get the active game for a player."""
+        # Check in memory first
+        if player_id in self.active_games:
+            return self.active_games[player_id]
+
+        # If not in memory, check database
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT active_game_id FROM active_games WHERE player_id = ?", (player_id,)
+        )
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            # Update memory cache
+            self.active_games[player_id] = result[0]
+            return result[0]
+
+        return None
+
     def setup_handlers(self):
         """Set up command handlers."""
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("current_game", self.current_game))
+        self.application.add_handler(
+            CommandHandler("active_games", self.active_games_command)
+        )
+        self.application.add_handler(
+            CommandHandler("set_active", self.set_active_command)
+        )
         self.application.add_handler(CommandHandler("surrender", self.surrender_game))
-        self.application.add_handler(CommandHandler("confirm_surrender", self.confirm_surrender))
+        self.application.add_handler(
+            CommandHandler("confirm_surrender", self.confirm_surrender)
+        )
         self.application.add_handler(CommandHandler("cancel", self.cancel_surrender))
         self.application.add_handler(CommandHandler("ping", self.ping_opponent))
         self.application.add_handler(CommandHandler("board", self.show_board))
@@ -322,7 +403,8 @@ class ChessBot:
         commands = [
             BotCommand("start", "Show welcome message and instructions"),
             BotCommand("newgame", "Start a new chess game"),
-            BotCommand("current_game", "Show your current game info"),
+            BotCommand("current_game", "Show your current active game info"),
+            BotCommand("active_games", "Show all your active games"),
             BotCommand("board", "Show the current board state"),
             BotCommand("surrender", "Surrender current game (forfeit)"),
             BotCommand("ping", "Notify your opponent it's their turn"),
@@ -372,6 +454,8 @@ class ChessBot:
                 game_id, opponent_id = self.game_manager.join_game(invite_link, user.id)
 
                 if game_id:
+                    # Set this as the active game for the player
+                    self.set_active_game(user.id, game_id)
                     # Determine if user is white or black
                     game_info = self.game_manager.get_game(game_id)
                     is_white = game_info["player1_id"] == user.id
@@ -455,7 +539,7 @@ class ChessBot:
         )
 
         # Create a keyboard with common commands
-        keyboard = [["/newgame", "/current_game"], ["/surrender"]]
+        keyboard = [["/newgame", "/current_game"], ["/active_games", "/surrender"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
         await update.message.reply_text(
@@ -489,6 +573,9 @@ class ChessBot:
 
         # Create a new game
         game_id, invite_link = self.game_manager.create_game(player_id)
+
+        # Set this as the active game for the player
+        self.set_active_game(player_id, game_id)
 
         deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
 
@@ -538,6 +625,8 @@ class ChessBot:
         game_id, opponent_id = self.game_manager.join_game(invite_link, player_id)
 
         if game_id:
+            # Set this as the active game for the player
+            self.set_active_game(player_id, game_id)
             # Get the initial board state
             board = chess.Board()
             svg_file = self.render_board(board)
@@ -578,15 +667,49 @@ class ChessBot:
         if not self.is_valid_move_format(move_text):
             return  # Don't respond to non-move messages
 
-        # Find the game this player is in
+        # Get the active game ID for this user
+        active_game_id = self.get_active_game(player_id)
+
+        # If no active game is set, check if the user has any games
+        if not active_game_id:
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.game_id
+                FROM games g
+                WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+                ORDER BY g.created_at DESC
+                LIMIT 1
+            """,
+                (player_id, player_id),
+            )
+
+            result = cursor.fetchone()
+            conn.close()
+
+            if result:
+                # Set the first game as active
+                active_game_id = result[0]
+                self.set_active_game(player_id, active_game_id)
+            else:
+                await update.message.reply_text(
+                    language_manager.get_message(
+                        "not_in_active_game", user.id, user_language
+                    )
+                )
+                return
+
+        # Verify the game exists and the user is a participant
         conn = sqlite3.connect(self.game_manager.db_path)
         cursor = conn.cursor()
         cursor.execute(
             """
             SELECT game_id FROM games
-            WHERE (player1_id = ? OR player2_id = ?) AND status = 'playing'
+            WHERE game_id = ? AND (player1_id = ? OR player2_id = ?) AND status = 'playing'
         """,
-            (player_id, player_id),
+            (active_game_id, player_id, player_id),
         )
         result = cursor.fetchone()
         conn.close()
@@ -599,7 +722,7 @@ class ChessBot:
             )
             return
 
-        game_id = result[0]
+        game_id = active_game_id
 
         # Make the move
         result = self.game_manager.make_move(game_id, move_text, player_id)
@@ -783,7 +906,41 @@ class ChessBot:
         player_id = user.id
         user_language = user.language_code
 
-        # Find the user's active game
+        # Get the active game ID for this user
+        active_game_id = self.get_active_game(player_id)
+
+        # If no active game is set, check if the user has any games
+        if not active_game_id:
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.game_id
+                FROM games g
+                WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+                ORDER BY g.created_at DESC
+                LIMIT 1
+            """,
+                (player_id, player_id),
+            )
+
+            result = cursor.fetchone()
+            conn.close()
+
+            if result:
+                # Set the first game as active
+                active_game_id = result[0]
+                self.set_active_game(player_id, active_game_id)
+            else:
+                await update.message.reply_text(
+                    language_manager.get_message(
+                        "no_active_games", user.id, user_language
+                    )
+                )
+                return
+
+        # Get the active game details
         conn = sqlite3.connect(self.game_manager.db_path)
         cursor = conn.cursor()
 
@@ -791,15 +948,16 @@ class ChessBot:
             """
             SELECT g.game_id, g.player1_id, g.player2_id, g.created_at, g.current_turn, g.fen
             FROM games g
-            WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+            WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
         """,
-            (player_id, player_id),
+            (active_game_id, player_id, player_id),
         )
 
         result = cursor.fetchone()
         conn.close()
 
         if not result:
+            # This shouldn't happen, but just in case
             await update.message.reply_text(
                 language_manager.get_message("no_active_games", user.id, user_language)
             )
@@ -854,7 +1012,41 @@ class ChessBot:
         player_id = user.id
         user_language = user.language_code
 
-        # Find the user's active game
+        # Get the active game ID for this user
+        active_game_id = self.get_active_game(player_id)
+
+        # If no active game is set, check if the user has any games
+        if not active_game_id:
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.game_id
+                FROM games g
+                WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+                ORDER BY g.created_at DESC
+                LIMIT 1
+            """,
+                (player_id, player_id),
+            )
+
+            result = cursor.fetchone()
+            conn.close()
+
+            if result:
+                # Set the first game as active
+                active_game_id = result[0]
+                self.set_active_game(player_id, active_game_id)
+            else:
+                await update.message.reply_text(
+                    f"❌ {language_manager.get_message('no_active_game', user.id, user_language)}\n"
+                    f"{language_manager.get_message('create_own_game', user.id)}",
+                    parse_mode="HTML",
+                )
+                return
+
+        # Verify the game exists
         conn = sqlite3.connect(self.game_manager.db_path)
         cursor = conn.cursor()
 
@@ -862,9 +1054,9 @@ class ChessBot:
             """
             SELECT g.game_id
             FROM games g
-            WHERE (g.player1_id = ? OR player2_id = ?) AND status = 'playing'
+            WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
         """,
-            (player_id, player_id),
+            (active_game_id, player_id, player_id),
         )
 
         result = cursor.fetchone()
@@ -879,15 +1071,17 @@ class ChessBot:
             return
 
         # Store the game_id in user_data for later use in confirm_surrender
-        context.user_data["surrender_game_id"] = result[0]
+        context.user_data["surrender_game_id"] = active_game_id
 
         # Ask for confirmation
         await update.message.reply_text(
-            language_manager.get_message('confirm_surrender', user.id, user_language),
+            language_manager.get_message("confirm_surrender", user.id, user_language),
             parse_mode="HTML",
         )
 
-    async def confirm_surrender(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def confirm_surrender(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
         """Confirm surrender and end the game."""
         user = update.effective_user
         player_id = user.id
@@ -963,7 +1157,9 @@ class ChessBot:
 
         conn.close()
 
-    async def cancel_surrender(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def cancel_surrender(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
         """Cancel the surrender confirmation."""
         user = update.effective_user
         user_language = user.language_code
@@ -981,7 +1177,7 @@ class ChessBot:
 
         # Notify the player
         await update.message.reply_text(
-            language_manager.get_message('surrender_cancelled', user.id, user_language),
+            language_manager.get_message("surrender_cancelled", user.id, user_language),
             parse_mode="HTML",
         )
 
@@ -991,7 +1187,39 @@ class ChessBot:
         player_id = user.id
         user_language = user.language_code
 
-        # Check if user is in an active game
+        # Get the active game ID for this user
+        active_game_id = self.get_active_game(player_id)
+
+        # If no active game is set, check if the user has any games
+        if not active_game_id:
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.game_id
+                FROM games g
+                WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+                ORDER BY g.created_at DESC
+                LIMIT 1
+            """,
+                (player_id, player_id),
+            )
+
+            result = cursor.fetchone()
+            conn.close()
+
+            if result:
+                # Set the first game as active
+                active_game_id = result[0]
+                self.set_active_game(player_id, active_game_id)
+            else:
+                await update.message.reply_text(
+                    language_manager.get_message("ping_no_game", user.id, user_language)
+                )
+                return
+
+        # Get the active game details
         conn = sqlite3.connect(self.game_manager.db_path)
         cursor = conn.cursor()
 
@@ -999,9 +1227,9 @@ class ChessBot:
             """
             SELECT g.game_id, g.player1_id, g.player2_id, g.current_turn
             FROM games g
-            WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+            WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
         """,
-            (player_id, player_id),
+            (active_game_id, player_id, player_id),
         )
 
         result = cursor.fetchone()
@@ -1021,7 +1249,9 @@ class ChessBot:
         # Check if it's the opponent's turn (not the user's turn)
         if current_turn == player_id:
             await update.message.reply_text(
-                language_manager.get_message("ping_not_opponent_turn", user.id, user_language)
+                language_manager.get_message(
+                    "ping_not_opponent_turn", user.id, user_language
+                )
             )
             return
 
@@ -1031,7 +1261,9 @@ class ChessBot:
             time_since_last_ping = now - self.last_ping[player_id]
             if time_since_last_ping.total_seconds() < 1800:  # 30 minutes = 1800 seconds
                 await update.message.reply_text(
-                    language_manager.get_message("ping_cooldown", user.id, user_language)
+                    language_manager.get_message(
+                        "ping_cooldown", user.id, user_language
+                    )
                 )
                 return
 
@@ -1078,7 +1310,9 @@ class ChessBot:
                 # Also remove from database
                 conn = sqlite3.connect(self.game_manager.db_path)
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM ping_history WHERE player_id = ?", (player_id,))
+                cursor.execute(
+                    "DELETE FROM ping_history WHERE player_id = ?", (player_id,)
+                )
                 conn.commit()
                 conn.close()
 
@@ -1088,7 +1322,41 @@ class ChessBot:
         player_id = user.id
         user_language = user.language_code
 
-        # Find the user's active game
+        # Get the active game ID for this user
+        active_game_id = self.get_active_game(player_id)
+
+        # If no active game is set, check if the user has any games
+        if not active_game_id:
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.game_id
+                FROM games g
+                WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+                ORDER BY g.created_at DESC
+                LIMIT 1
+            """,
+                (player_id, player_id),
+            )
+
+            result = cursor.fetchone()
+            conn.close()
+
+            if result:
+                # Set the first game as active
+                active_game_id = result[0]
+                self.set_active_game(player_id, active_game_id)
+            else:
+                await update.message.reply_text(
+                    language_manager.get_message(
+                        "no_active_board", user.id, user_language
+                    )
+                )
+                return
+
+        # Get the active game details
         conn = sqlite3.connect(self.game_manager.db_path)
         cursor = conn.cursor()
 
@@ -1096,9 +1364,9 @@ class ChessBot:
             """
             SELECT g.game_id, g.fen
             FROM games g
-            WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+            WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
         """,
-            (player_id, player_id),
+            (active_game_id, player_id, player_id),
         )
 
         result = cursor.fetchone()
@@ -1119,6 +1387,179 @@ class ChessBot:
         png_file = self.render_board(board, game_id)
 
         # Send the board image
+        with open(png_file, "rb") as f:
+            await update.message.reply_photo(
+                photo=f,
+                caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {game_id}",
+                parse_mode="HTML",
+            )
+
+        # Clean up temp file
+        os.unlink(png_file)
+
+    async def active_games_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Show all active games for the user."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+
+        # Find all active games for the user
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT g.game_id, g.player1_id, g.player2_id, g.current_turn, g.fen
+            FROM games g
+            WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+            ORDER BY g.created_at DESC
+        """,
+            (player_id, player_id),
+        )
+
+        games = cursor.fetchall()
+        conn.close()
+
+        if not games:
+            await update.message.reply_text(
+                language_manager.get_message("no_active_games", user.id, user_language)
+            )
+            return
+
+        # Get the current active game
+        active_game_id = self.get_active_game(player_id)
+
+        # If no active game is set but the user has games, set the first one as active
+        if not active_game_id and games:
+            active_game_id = games[0][0]
+            self.set_active_game(player_id, active_game_id)
+
+        # Build the response message
+        response = f"<b>{language_manager.get_message('active_games', user.id, user_language)}</b>\n\n"
+
+        for game_id, player1_id, player2_id, current_turn, fen in games:
+            # Determine opponent ID
+            opponent_id = player2_id if player_id == player1_id else player1_id
+
+            # Get opponent username
+            try:
+                opponent_user = await context.bot.get_chat(opponent_id)
+                opponent_name = opponent_user.username or f"User {opponent_id}"
+            except Exception:
+                opponent_name = f"User {opponent_id}"
+
+            # Determine player color
+            is_white = player1_id == player_id
+            player_color = (
+                language_manager.get_message("white", user.id)
+                if is_white
+                else language_manager.get_message("black", user.id)
+            )
+
+            # Determine whose turn it is
+            is_your_turn = current_turn == player_id
+            turn_message = (
+                language_manager.get_message("your_turn", user.id)
+                if is_your_turn
+                else language_manager.get_message("waiting_opponent", user.id)
+            )
+
+            # Mark the active game
+            active_marker = "➡️ " if game_id == active_game_id else ""
+
+            # Format game details
+            game_details = language_manager.get_message("game_details", user.id) % (
+                game_id,
+                opponent_name,
+                player_color,
+                turn_message,
+            )
+
+            response += f"{active_marker}{game_details}\n"
+            response += f"/set_active {game_id} - {language_manager.get_message('set_active_game', user.id)}\n\n"
+
+        await update.message.reply_text(response, parse_mode="HTML")
+
+        # If there's an active game, show the board
+        if active_game_id:
+            # Find the game with the active_game_id
+            for game in games:
+                if game[0] == active_game_id:
+                    # Create the board
+                    board = chess.Board(game[4])  # fen is at index 4
+
+                    # Get PNG file path
+                    png_file = self.render_board(board, active_game_id)
+
+                    # Send the board image
+                    with open(png_file, "rb") as f:
+                        await update.message.reply_photo(
+                            photo=f,
+                            caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {active_game_id}",
+                            parse_mode="HTML",
+                        )
+
+                    # Clean up temp file
+                    os.unlink(png_file)
+                    break
+
+    async def set_active_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        """Set a game as the active game."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+
+        # Check if user provided a game ID
+        if len(context.args) != 1:
+            await update.message.reply_text(
+                language_manager.get_message("no_active_games", user.id, user_language)
+            )
+            return
+
+        game_id = context.args[0]
+
+        # Check if the game exists and the user is a participant
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT g.fen
+            FROM games g
+            WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+        """,
+            (game_id, player_id, player_id),
+        )
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            await update.message.reply_text(
+                language_manager.get_message("no_active_games", user.id, user_language)
+            )
+            return
+
+        fen = result[0]
+
+        # Set the game as active
+        self.set_active_game(player_id, game_id)
+
+        # Notify the user
+        await update.message.reply_text(
+            language_manager.get_message("game_set_active", user.id, user_language)
+            % game_id,
+            parse_mode="HTML",
+        )
+
+        # Show the board
+        board = chess.Board(fen)
+        png_file = self.render_board(board, game_id)
+
         with open(png_file, "rb") as f:
             await update.message.reply_photo(
                 photo=f,

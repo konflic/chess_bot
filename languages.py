@@ -11,7 +11,6 @@ TRANSLATIONS = {
         "welcome_leave": "/surrender - Surrender current game (forfeit)",
         "welcome_how_to_play": "How to play",
         "welcome_move_format": "Just type moves like e2e4, Nf3, or O-O",
-
         # Game creation and joining
         "new_game_created": "New chess game created!",
         "game_id": "Game ID",
@@ -27,7 +26,6 @@ TRANSLATIONS = {
         "game_not_exist": "• Game doesn't exist",
         "link_expired": "• Link is expired",
         "create_own_game": "Create your own game with /newgame",
-
         # Game status
         "joined_success": "Successfully joined game!",
         "you_are": "You are",
@@ -39,7 +37,6 @@ TRANSLATIONS = {
         "player_joined": "Player has joined your game!",
         "not_in_active_game": "You're not in an active game. Start one with /newgame",
         "no_active_games": "You don't have any active games. Start one with /newgame",
-
         # Game play
         "current_active_game": "Current Active Game",
         "opponent": "Opponent",
@@ -49,18 +46,15 @@ TRANSLATIONS = {
         "opponent_played": "Opponent played",
         "your_turn_exclamation": "Your turn!",
         "invalid_move": "Invalid move:",
-
         # Board command
         "board_command": "Use /board to see the current board",
         "no_active_board": "You don't have an active game to show the board for",
-
         # Ping command
         "ping_sent": "Reminder sent to your opponent",
         "ping_received": "Your opponent is waiting for your move",
         "ping_cooldown": "You can only send a reminder once every 30 minutes",
         "ping_not_opponent_turn": "It's your turn to move, not your opponent's",
         "ping_no_game": "You don't have an active game to send a reminder for",
-
         # Game end
         "game_ended": "Game ended.",
         "left_game": "You have left game",
@@ -71,6 +65,12 @@ TRANSLATIONS = {
         "awarded_win": "You are awarded the win! 🎉",
         "confirm_surrender": "Are you sure you want to surrender this game? Your opponent will win. Reply with /confirm_surrender to confirm or /cancel to continue playing.",
         "surrender_cancelled": "Surrender cancelled. The game continues!",
+        "active_games": "Your active games:",
+        "no_active_games": "You don't have any active games. Start one with /newgame",
+        "game_details": "Game ID: %s | Opponent: %s | You play as: %s | Turn: %s",
+        "set_active_game": "Set as active game",
+        "game_set_active": "Game %s is now your active game.",
+        "current_active_game": "Current active game:",
         "checkmate_win": "Checkmate! You win!",
         "checkmate_lose": "Checkmate! You lose!",
         "game_draw": "Game ended in a draw!",
@@ -85,7 +85,6 @@ TRANSLATIONS = {
         "welcome_leave": "/surrender - Сдаться в текущей игре",
         "welcome_how_to_play": "Как играть",
         "welcome_move_format": "Просто введите ходы, например e2e4, Nf3 или O-O",
-
         # Game creation and joining
         "new_game_created": "Новая шахматная игра создана!",
         "game_id": "ID игры",
@@ -101,7 +100,6 @@ TRANSLATIONS = {
         "game_not_exist": "• Игра не существует",
         "link_expired": "• Срок действия ссылки истек",
         "create_own_game": "Создайте свою игру с помощью /newgame",
-
         # Game status
         "joined_success": "Успешно присоединились к игре!",
         "you_are": "Вы играете",
@@ -113,7 +111,6 @@ TRANSLATIONS = {
         "player_joined": "Игрок присоединился к вашей игре!",
         "not_in_active_game": "Вы не участвуете в активной игре. Начните с /newgame",
         "no_active_games": "У вас нет активных игр. Начните с /newgame",
-
         # Game play
         "current_active_game": "Текущая активная игра",
         "opponent": "Соперник",
@@ -123,18 +120,15 @@ TRANSLATIONS = {
         "opponent_played": "Соперник сделал ход",
         "your_turn_exclamation": "Ваш ход!",
         "invalid_move": "Недопустимый ход:",
-
         # Board command
         "board_command": "Используйте /board чтобы увидеть текущую доску",
         "no_active_board": "У вас нет активной игры, чтобы показать доску",
-
         # Ping command
         "ping_sent": "Напоминание отправлено вашему сопернику",
         "ping_received": "Ваш соперник ожидает вашего хода",
         "ping_cooldown": "Вы можете отправлять напоминание только раз в 30 минут",
         "ping_not_opponent_turn": "Сейчас ваш ход, а не вашего соперника",
         "ping_no_game": "У вас нет активной игры, чтобы отправить напоминание",
-
         # Game end
         "game_ended": "Игра окончена.",
         "left_game": "Вы покинули игру",
@@ -145,17 +139,26 @@ TRANSLATIONS = {
         "awarded_win": "Вам присуждена победа! 🎉",
         "confirm_surrender": "Вы уверены, что хотите сдаться? Ваш соперник победит. Ответьте /confirm_surrender для подтверждения или /cancel для продолжения игры.",
         "surrender_cancelled": "Сдача отменена. Игра продолжается!",
+        "active_games": "Ваши активные игры:",
+        "no_active_games": "У вас нет активных игр. Начните с /newgame",
+        "game_details": "ID игры: %s | Соперник: %s | Вы играете: %s | Ход: %s",
+        "set_active_game": "Сделать активной игрой",
+        "game_set_active": "Игра %s теперь ваша активная игра.",
+        "current_active_game": "Текущая активная игра:",
         "checkmate_win": "Шах и мат! Вы выиграли!",
         "checkmate_lose": "Шах и мат! Вы проиграли!",
         "game_draw": "Игра закончилась вничью!",
         "no_active_game": "Активная игра не найдена.",
-    }
+    },
 }
+
 
 class LanguageManager:
     def __init__(self):
         self.default_language = "en"
-        self.user_languages = {}  # Store user language preferences: {user_id: language_code}
+        self.user_languages = (
+            {}
+        )  # Store user language preferences: {user_id: language_code}
 
     def get_user_language(self, user_id, language_code=None):
         """
@@ -165,7 +168,7 @@ class LanguageManager:
         """
         if language_code:
             # Update user's language preference if a specific language is provided
-            if language_code.startswith('ru'):
+            if language_code.startswith("ru"):
                 self.user_languages[user_id] = "ru"
             else:
                 self.user_languages[user_id] = "en"
