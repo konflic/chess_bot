@@ -1620,29 +1620,6 @@ class ChessBot:
             response, parse_mode="HTML", reply_markup=reply_markup
         )
 
-        # # If there's an active game, show the board
-        # if active_game_id:
-        #     # Find the game with the active_game_id
-        #     for game in games:
-        #         if game[0] == active_game_id:
-        #             # Create the board
-        #             board = chess.Board(game[4])  # fen is at index 4
-
-        #             # Get PNG file path
-        #             png_file = self.render_board(board, active_game_id)
-
-        #             # Send the board image
-        #             with open(png_file, "rb") as f:
-        #                 await update.message.reply_photo(
-        #                     photo=f,
-        #                     caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {active_game_id}",
-        #                     parse_mode="HTML",
-        #                 )
-
-        #             # Clean up temp file
-        #             os.unlink(png_file)
-        #             break
-
     async def set_active_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
@@ -1766,14 +1743,15 @@ class ChessBot:
             # Show the board
             board = chess.Board(fen)
             png_file = self.render_board(board, game_id)
+            await self.current_game()
 
-            with open(png_file, "rb") as f:
-                await context.bot.send_photo(
-                    chat_id=player_id,
-                    photo=f,
-                    caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {game_id}",
-                    parse_mode="HTML",
-                )
+            # with open(png_file, "rb") as f:
+            #     await context.bot.send_photo(
+            #         chat_id=player_id,
+            #         photo=f,
+            #         caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {game_id} ", <-
+            #         parse_mode="HTML",
+            #     )
 
             # Clean up temp file
             os.unlink(png_file)
