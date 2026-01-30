@@ -751,7 +751,7 @@ class ChessBot:
 
         cursor.execute(
             """
-            SELECT g.game_id, g.player1_id, g.player2_id, g.created_at
+            SELECT g.game_id, g.player1_id, g.player2_id, g.created_at, g.current_turn, g.fen
             FROM games g
             WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
         """,
@@ -767,7 +767,7 @@ class ChessBot:
             )
             return
 
-        game_id, player1_id, player2_id, created_at = result
+        game_id, player1_id, player2_id, created_at, current_turn, fen = result
 
         # Determine opponent ID and get opponent username
         opponent_id = player2_id if player_id == player1_id else player1_id
@@ -781,15 +781,33 @@ class ChessBot:
             # If we can't get the user info from Telegram, just use the ID
             opponent_name = f"User {opponent_id}"
 
+        # Determine whose turn it is
+        is_your_turn = current_turn == player_id
+        turn_message = (
+            language_manager.get_message("your_turn", user.id)
+            if is_your_turn
+            else language_manager.get_message("waiting_opponent", user.id)
+        )
+
+        # Determine player color
+        is_white = player1_id == player_id
+        player_color = (
+            language_manager.get_message("white", user.id)
+            if is_white
+            else language_manager.get_message("black", user.id)
+        )
+
         # Format the response
         game_info_message = (
-            f"{language_manager.get_message('current_active_game', user.id, user_language)}"
+            f"<b>{language_manager.get_message('current_active_game', user.id, user_language)}</b>"
             f"\n{language_manager.get_message('game_id', user.id)}: {game_id}"
             f"\n{language_manager.get_message('opponent', user.id)}: {opponent_name}"
             f"\n{language_manager.get_message('started_at', user.id)}: {created_at}"
+            f"\n{language_manager.get_message('you_are', user.id)}: {player_color}"
+            f"\n{language_manager.get_message('current_turn', user.id)}: {turn_message}"
         )
 
-        await update.message.reply_text(game_info_message)
+        await update.message.reply_text(game_info_message, parse_mode="HTML")
 
     async def surrender_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Surrender the current game immediately."""
