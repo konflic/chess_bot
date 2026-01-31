@@ -19,6 +19,7 @@ import cairosvg
 import time
 
 from configuration import BOT_NAME, BOT_VERSION, GAMES_DB, language_manager
+from motivational_quotes import get_motivational_quote
 import datetime
 
 # Computer player ID
@@ -1387,14 +1388,21 @@ class ChessBot:
             # Get the user's username
             username = user.username or user.first_name
 
+            # Get a motivational quote in the opponent's language
+            opponent_language = language_manager.get_user_language(opponent_id)
+            quote = get_motivational_quote(opponent_language)
+
             await context.bot.send_message(
                 chat_id=opponent_id,
-                text=f"🔔 <b>{username}</b> {language_manager.get_message('ping_received', opponent_id)}",
+                text=f"🔔 <b>{username}</b> {language_manager.get_message('ping_received', opponent_id)}\n\n💡 <i>{quote}</i>",
                 parse_mode="HTML",
             )
 
-            # Confirm to the user that the ping was sent
-            await update.message.reply_text(language_manager.get_message("ping_sent", user.id, user_language))
+            # Confirm to the user that the ping was sent (without motivational quote)
+            await update.message.reply_text(
+                language_manager.get_message("ping_sent", user.id, user_language),
+                parse_mode="HTML"
+            )
         except Exception as e:
             print(f"Could not send ping to opponent {opponent_id}: {e}")
             # If we couldn't send the message, don't count this as a ping
