@@ -21,6 +21,31 @@ import time
 from configuration import BOT_NAME, BOT_VERSION, GAMES_DB, language_manager
 import datetime
 
+# Computer player ID
+COMPUTER_PLAYER = -1
+
+class ComputerEngine:
+    """A simple chess engine for computer opponents."""
+
+    @staticmethod
+    def get_move(board):
+        """Generate a move using medium difficulty strategy."""
+        # First, look for capturing moves
+        capturing_moves = []
+        for move in board.legal_moves:
+            if board.is_capture(move):
+                capturing_moves.append(move)
+
+        # If there are capturing moves, choose one randomly
+        if capturing_moves:
+            return random.choice(capturing_moves)
+
+        # Otherwise, make a random move
+        legal_moves = list(board.legal_moves)
+        if not legal_moves:
+            return None
+        return random.choice(legal_moves)
+
 
 class ChessGameManager:
     def __init__(self, db_path=GAMES_DB):
@@ -93,8 +118,13 @@ class ChessGameManager:
         """Generate a unique invite link for a game."""
         return "".join(random.choices(string.ascii_letters + string.digits, k=12))
 
-    def create_game(self, player1_id):
-        """Create a new game and return the game ID and invite link."""
+    def create_game(self, player1_id, computer_opponent=False):
+        """Create a new game and return the game ID and invite link.
+
+        Args:
+            player1_id: The ID of the player creating the game
+            computer_opponent: Boolean indicating if this is a game against computer
+        """
         game_id = "".join(random.choices(string.ascii_letters + string.digits, k=10))
         invite_link = self.generate_invite_link()
 
@@ -102,13 +132,24 @@ class ChessGameManager:
         cursor = conn.cursor()
 
         try:
-            cursor.execute(
-                """
-                INSERT INTO games (game_id, player1_id, current_turn, invite_link)
-                VALUES (?, ?, ?, ?)
-            """,
-                (game_id, player1_id, player1_id, invite_link),
-            )
+            if computer_opponent:
+                # Create a game with a computer opponent
+                cursor.execute(
+                    """
+                    INSERT INTO games (game_id, player1_id, player2_id, current_turn, invite_link, status)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                    (game_id, player1_id, COMPUTER_PLAYER, player1_id, invite_link, "playing"),
+                )
+            else:
+                # Create a regular game waiting for a human opponent
+                cursor.execute(
+                    """
+                    INSERT INTO games (game_id, player1_id, current_turn, invite_link)
+                    VALUES (?, ?, ?, ?)
+                """,
+                    (game_id, player1_id, player1_id, invite_link),
+                )
 
             conn.commit()
             conn.close()
@@ -116,7 +157,7 @@ class ChessGameManager:
             return game_id, invite_link
         except sqlite3.IntegrityError:
             # If there's a collision, try again with a new ID
-            return self.create_game(player1_id)
+            return self.create_game(player1_id, computer_opponent)
 
     def join_game(self, invite_link, player2_id):
         """Join a game using an invite link."""
@@ -382,6 +423,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
+        self.application.add_handler(CommandHandler("playvs", self.play_vs_computer))
         self.application.add_handler(CommandHandler("status", self.current_game))
         self.application.add_handler(CommandHandler("active_games", self.active_games_command))
         self.application.add_handler(CommandHandler("set_active", self.set_active_command))
@@ -403,6 +445,7 @@ class ChessBot:
             BotCommand("start", "Start bot and see main menu"),
             BotCommand("help", "Show all available commands"),
             BotCommand("newgame", "Create a new chess game"),
+            BotCommand("playvs", "Play against computer"),
             BotCommand("status", "Show your current active game"),
             BotCommand("active_games", "List all your active games"),
             BotCommand("board", "Display the current board"),
@@ -758,7 +801,11 @@ class ChessBot:
                 if result["winner"] == "draw":
                     # DRAW - notify both players
                     player_caption = f"🏁 {language_manager.get_message('game_draw', user.id, user_language)}"
-                    opponent_caption = f"🏁 {language_manager.get_message('game_draw', opponent_id)}"
+
+                    # Only send to opponent if it's a human (not a computer)
+                    opponent_caption = None
+                    if opponent_id != COMPUTER_PLAYER:  # Check if not computer
+                        opponent_caption = f"🏁 {language_manager.get_message('game_draw', opponent_id)}"
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
@@ -767,8 +814,8 @@ class ChessBot:
                     # Clean up temp file
                     os.unlink(png_file)
 
-                    # Send to opponent
-                    if opponent_id:
+                    # Send to opponent if it's a human
+                    if opponent_id > 0 and opponent_caption:
                         try:
                             opponent_png_file = self.render_board(board, game_id)
                             with open(opponent_png_file, "rb") as f:
@@ -789,11 +836,17 @@ class ChessBot:
                     if is_winner:
                         # Current player is the WINNER
                         player_caption = f"🏆 {language_manager.get_message('checkmate_win', user.id, user_language)}"
-                        opponent_caption = f"💀 {language_manager.get_message('checkmate_lose', opponent_id)}"
+                        # Only set opponent caption if it's a human
+                        opponent_caption = None
+                        if opponent_id != COMPUTER_PLAYER:  # Check if not computer
+                            opponent_caption = f"💀 {language_manager.get_message('checkmate_lose', opponent_id)}"
                     else:
                         # Current player is the LOSER
                         player_caption = f"💀 {language_manager.get_message('checkmate_lose', user.id, user_language)}"
-                        opponent_caption = f"🏆 {language_manager.get_message('checkmate_win', opponent_id)}"
+                        # Only set opponent caption if it's a human
+                        opponent_caption = None
+                        if opponent_id != COMPUTER_PLAYER:  # Check if not computer
+                            opponent_caption = f"🏆 {language_manager.get_message('checkmate_win', opponent_id)}"
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
@@ -802,8 +855,8 @@ class ChessBot:
                     # Clean up temp file
                     os.unlink(png_file)
 
-                    # Send to opponent
-                    if opponent_id:
+                    # Send to opponent if it's a human
+                    if opponent_id > 0 and opponent_caption:
                         try:
                             opponent_png_file = self.render_board(board, game_id)
                             with open(opponent_png_file, "rb") as f:
@@ -831,28 +884,35 @@ class ChessBot:
                 # Clean up temp file
                 os.unlink(png_file)
 
-                # Notify the other player
+                # Get the other player ID
                 other_player_id = (
                     game_info["player2_id"] if player_id == game_info["player1_id"] else game_info["player1_id"]
                 )
-                try:
-                    # Create another PNG for the opponent
-                    opponent_png_file = self.render_board(board, game_id)
-                    opponent_caption = f"{language_manager.get_message('opponent_played', other_player_id)} {update.effective_user.username} {move_text}\n\n{language_manager.get_message('your_turn_exclamation', other_player_id)}"
 
-                    with open(opponent_png_file, "rb") as f:
-                        await context.bot.send_photo(
-                            chat_id=other_player_id,
-                            photo=f,
-                            caption=opponent_caption,
-                            parse_mode="HTML",
-                        )
+                # Check if the other player is a computer
+                if other_player_id == COMPUTER_PLAYER:
+                    # It's the computer's turn, generate a move
+                    await self.make_computer_move(game_id, other_player_id, context, user)
+                else:
+                    # It's a human player's turn, notify them
+                    try:
+                        # Create another PNG for the opponent
+                        opponent_png_file = self.render_board(board, game_id)
+                        opponent_caption = f"{language_manager.get_message('opponent_played', other_player_id)} {update.effective_user.username} {move_text}\n\n{language_manager.get_message('your_turn_exclamation', other_player_id)}"
 
-                    # Clean up temp file
-                    os.unlink(opponent_png_file)
+                        with open(opponent_png_file, "rb") as f:
+                            await context.bot.send_photo(
+                                chat_id=other_player_id,
+                                photo=f,
+                                caption=opponent_caption,
+                                parse_mode="HTML",
+                            )
 
-                except Exception:
-                    pass  # Ignore if unable to send message
+                        # Clean up temp file
+                        os.unlink(opponent_png_file)
+
+                    except Exception:
+                        pass  # Ignore if unable to send message
         else:
             await update.message.reply_text(
                 f"{language_manager.get_message('invalid_move', user.id, user_language)} {result['error']}"
@@ -1685,6 +1745,141 @@ class ChessBot:
                 parse_mode="HTML",
                 reply_markup=None,  # Remove the inline keyboard
             )
+
+        # Handle play vs computer
+        elif data.startswith("playvs"):
+            # Create a new game with the computer opponent
+            game_id, _ = self.game_manager.create_game(player_id, True)
+
+            # Set this as the active game for the player
+            self.set_active_game(player_id, game_id)
+
+            # Get the initial board state
+            board = chess.Board()
+            png_file = self.render_board(board, game_id)
+
+            # Edit the message to show the new game
+            await query.edit_message_text(
+                "New game started against Computer.\nYou are playing as White. Your turn!",
+                parse_mode="HTML",
+            )
+
+            # Send the initial board to the player
+            with open(png_file, "rb") as f:
+                await context.bot.send_photo(
+                    chat_id=player_id,
+                    photo=f,
+                    caption="New game started against Computer.\nYou are playing as White. Your turn!",
+                    parse_mode="HTML",
+                )
+
+            # Clean up temp file
+            os.unlink(png_file)
+
+    async def play_vs_computer(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start a new game against the computer."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+
+        # Create a new game with the computer opponent
+        game_id, _ = self.game_manager.create_game(player_id, True)
+
+        # Set this as the active game for the player
+        self.set_active_game(player_id, game_id)
+
+        # Get the initial board state
+        board = chess.Board()
+        png_file = self.render_board(board, game_id)
+
+        # Send the initial board to the player
+        with open(png_file, "rb") as f:
+            await update.message.reply_photo(
+                photo=f,
+                caption="New game started against Computer.\nYou are playing as White. Your turn!",
+                parse_mode="HTML",
+            )
+
+        # Clean up temp file
+        os.unlink(png_file)
+
+    async def make_computer_move(self, game_id, computer_id, context, user):
+        """Generate and make a move for the computer player."""
+        # Get the current game state
+        game_info = self.game_manager.get_game(game_id)
+        if not game_info or game_info["status"] != "playing":
+            return
+
+        # Create the board from the current FEN
+        board = chess.Board(game_info["fen"])
+
+        # Generate a computer move
+        computer_move = ComputerEngine.get_move(board)
+
+        if not computer_move:
+            return  # No valid moves available
+
+        # Convert the move to SAN notation for display
+        move_san = board.san(computer_move)
+
+        # Make the move in the database
+        result = self.game_manager.make_move(game_id, move_san, computer_id)
+
+        if not result["success"]:
+            return
+
+        # Get the updated game info
+        game_info = self.game_manager.get_game(game_id)
+
+        # Create the updated board
+        board = chess.Board(result["new_fen"])
+
+        # Get PNG file path
+        png_file = self.render_board(board, game_id)
+
+        # Check if game is finished
+        if result["status"] == "finished":
+            if result["winner"] == "draw":
+                # DRAW
+                caption = f"🏁 Game ended in a draw!\nComputer played: {move_san}"
+            elif result["winner"] == computer_id:
+                # Computer won
+                caption = f"💀 Checkmate! Computer wins.\nComputer played: {move_san}"
+            else:
+                # Player won (shouldn't happen here since this is the computer's move)
+                caption = f"🏆 You win by checkmate!\nComputer played: {move_san}"
+
+            # Send the final board to the player
+            human_player_id = game_info["player1_id"] if computer_id == game_info["player2_id"] else game_info["player2_id"]
+            with open(png_file, "rb") as f:
+                await context.bot.send_photo(
+                    chat_id=human_player_id,
+                    photo=f,
+                    caption=caption,
+                    parse_mode="HTML",
+                )
+
+            # Clean up temp file
+            os.unlink(png_file)
+
+            # Delete the finished game
+            self.game_manager.delete_game(game_id)
+        else:
+            # Game continues
+            caption = f"Computer played: {move_san}\n\nYour turn!"
+
+            # Send the updated board to the player
+            human_player_id = game_info["player1_id"] if computer_id == game_info["player2_id"] else game_info["player2_id"]
+            with open(png_file, "rb") as f:
+                await context.bot.send_photo(
+                    chat_id=human_player_id,
+                    photo=f,
+                    caption=caption,
+                    parse_mode="HTML",
+                )
+
+            # Clean up temp file
+            os.unlink(png_file)
 
     def run(self):
         """Run the bot."""
