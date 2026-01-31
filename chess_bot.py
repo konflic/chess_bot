@@ -398,7 +398,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
-        self.application.add_handler(CommandHandler("current_game", self.current_game))
+        self.application.add_handler(CommandHandler("status", self.current_game))
         self.application.add_handler(
             CommandHandler("active_games", self.active_games_command)
         )
@@ -427,7 +427,7 @@ class ChessBot:
             BotCommand("start", "Start bot and see main menu"),
             BotCommand("help", "Show all available commands"),
             BotCommand("newgame", "Create a new chess game"),
-            BotCommand("current_game", "Show your current active game"),
+            BotCommand("status", "Show your current active game"),
             BotCommand("active_games", "List all your active games"),
             BotCommand("board", "Display the current board"),
             BotCommand("ping", "Remind opponent it's their turn"),
@@ -569,7 +569,7 @@ class ChessBot:
             f"<b>{language_manager.get_message('help_title', user.id, user_language)}</b> v{BOT_VERSION}\n\n"
             f"<b>{language_manager.get_message('help_game_commands', user.id, user_language)}</b>\n"
             f"/newgame - {language_manager.get_message('help_newgame', user.id, user_language)}\n"
-            f"/current_game - {language_manager.get_message('help_current_game', user.id, user_language)}\n"
+            f"/status - {language_manager.get_message('help_current_game', user.id, user_language)}\n"
             f"/active_games - {language_manager.get_message('help_active_games', user.id, user_language)}\n"
             f"/board - {language_manager.get_message('help_board', user.id, user_language)}\n\n"
             f"<b>{language_manager.get_message('help_interaction_commands', user.id, user_language)}</b>\n"
@@ -1434,7 +1434,7 @@ class ChessBot:
                 conn.commit()
                 conn.close()
 
-    async def show_board(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def show_board(self, update: Update, _: ContextTypes.DEFAULT_TYPE):
         """Show the current board state."""
         user = update.effective_user
         player_id = user.id
@@ -1727,8 +1727,6 @@ class ChessBot:
                 )
                 return
 
-            fen = result[0]
-
             # Set the game as active
             self.set_active_game(player_id, game_id)
 
@@ -1740,21 +1738,9 @@ class ChessBot:
                 reply_markup=None,  # Remove the inline keyboard
             )
 
-            # Show the board
-            board = chess.Board(fen)
-            png_file = self.render_board(board, game_id)
-            await self.current_game()
-
-            # with open(png_file, "rb") as f:
-            #     await context.bot.send_photo(
-            #         chat_id=player_id,
-            #         photo=f,
-            #         caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {game_id} ", <-
-            #         parse_mode="HTML",
-            #     )
-
-            # Clean up temp file
-            os.unlink(png_file)
+            # Show the board and game status
+            await self.show_board(update, context)
+            await self.current_game(update, context)
 
         # Handle surrender callback
         elif data.startswith("surrender:"):

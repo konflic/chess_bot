@@ -203,9 +203,7 @@ TRANSLATIONS = {
 class LanguageManager:
     def __init__(self):
         self.default_language = "en"
-        self.user_languages = (
-            {}
-        )  # Store user language preferences: {user_id: language_code}
+        self.user_languages = {}  # Store user language preferences: {user_id: language_code}
 
     def get_user_language(self, user_id, language_code=None):
         """
