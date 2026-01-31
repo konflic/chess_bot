@@ -89,18 +89,61 @@ class ChessGameManager:
         """
         )
 
-        # Create ping_history table to store ping timestamps
-        cursor.execute(
+        # Check if ping_history table exists and needs migration
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ping_history'")
+        table_exists = cursor.fetchone()
+
+        if table_exists:
+            # Check if the table has the new schema (with game_id)
+            cursor.execute("PRAGMA table_info(ping_history)")
+            columns = [column[1] for column in cursor.fetchall()]
+
+            if "game_id" not in columns:
+                # Need to migrate the table
+                print("Migrating ping_history table to include game_id...")
+
+                # 1. Rename the old table
+                cursor.execute("ALTER TABLE ping_history RENAME TO ping_history_old")
+
+                # 2. Create the new table with game_id
+                cursor.execute(
+                    """
+                    CREATE TABLE ping_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        game_id TEXT,
+                        player_id INTEGER,
+                        last_ping_time TIMESTAMP,
+                        UNIQUE(game_id, player_id)
+                    )
+                """
+                )
+
+                # 3. Migrate data from old table
+                # Since we don't have game_id for old records, we'll use 'unknown' as a placeholder
+                cursor.execute(
+                    """
+                    INSERT INTO ping_history (game_id, player_id, last_ping_time)
+                    SELECT 'unknown', player_id, last_ping_time FROM ping_history_old
+                """
+                )
+
+                # 4. Drop the old table
+                cursor.execute("DROP TABLE ping_history_old")
+
+                print("Migration completed successfully!")
+        else:
+            # Create ping_history table with the new schema
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ping_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    game_id TEXT,
+                    player_id INTEGER,
+                    last_ping_time TIMESTAMP,
+                    UNIQUE(game_id, player_id)
+                )
             """
-            CREATE TABLE IF NOT EXISTS ping_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                game_id TEXT,
-                player_id INTEGER,
-                last_ping_time TIMESTAMP,
-                UNIQUE(game_id, player_id)
             )
-        """
-        )
 
         # Create active_games table to track which game is active for each user
         cursor.execute(
