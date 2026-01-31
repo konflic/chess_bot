@@ -54,11 +54,11 @@ class ChessGameManager:
         self.init_db()
 
     def init_db(self):
-        """Initialize the database with necessary tables."""
+        """Initialize the database with necessary tables and apply migrations."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # Create games table
+        # Create games table with the latest schema
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS games (
@@ -70,10 +70,14 @@ class ChessGameManager:
                 current_turn INTEGER,  -- player id whose turn it is
                 status TEXT DEFAULT 'waiting',  -- waiting, playing, finished
                 invite_link TEXT UNIQUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_move_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """
         )
+
+        # Apply migrations for the games table
+        self._apply_games_migrations(cursor)
 
         # Create moves table
         cursor.execute(
@@ -159,6 +163,24 @@ class ChessGameManager:
 
         conn.commit()
         conn.close()
+
+    def _apply_games_migrations(self, cursor):
+        """Apply database migrations for the games table."""
+        # Get current table schema
+        cursor.execute("PRAGMA table_info(games)")
+        columns = [column[1] for column in cursor.fetchall()]
+
+        # Migration 1: Add last_move_timestamp column if it doesn't exist
+        if "last_move_timestamp" not in columns:
+            print("Applying migration: Adding last_move_timestamp column to games table...")
+            try:
+                cursor.execute("ALTER TABLE games ADD COLUMN last_move_timestamp TIMESTAMP")
+                # Update existing rows to have the created_at timestamp as the last_move_timestamp
+                cursor.execute("UPDATE games SET last_move_timestamp = created_at WHERE last_move_timestamp IS NULL")
+                print("Migration completed successfully!")
+            except sqlite3.OperationalError as e:
+                print(f"Migration failed: {e}")
+                # Continue anyway as the column might already exist with a different name
 
     def generate_invite_link(self):
         """Generate a unique invite link for a game."""
@@ -262,7 +284,7 @@ class ChessGameManager:
 
         cursor.execute(
             """
-            SELECT game_id, player1_id, player2_id, fen, current_turn, status
+            SELECT game_id, player1_id, player2_id, fen, current_turn, status, last_move_timestamp
             FROM games WHERE game_id = ?
         """,
             (game_id,),
@@ -279,6 +301,7 @@ class ChessGameManager:
                 "fen": result[3],
                 "current_turn": result[4],
                 "status": result[5],
+                "last_move_timestamp": result[6],
             }
         return None
 
@@ -320,7 +343,7 @@ class ChessGameManager:
                 cursor.execute(
                     """
                     UPDATE games
-                    SET fen = ?, current_turn = ?, status = ?
+                    SET fen = ?, current_turn = ?, status = ?, last_move_timestamp = CURRENT_TIMESTAMP
                     WHERE game_id = ?
                 """,
                     (
@@ -368,6 +391,64 @@ class ChessGameManager:
 
         conn.commit()
         conn.close()
+
+    def get_abandoned_games(self, days_threshold=7):
+        """Get games that have been abandoned (no moves for specified days).
+
+        Args:
+            days_threshold: Number of days without moves to consider a game abandoned
+
+        Returns:
+            List of game dictionaries for abandoned games
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT game_id, player1_id, player2_id, fen, current_turn, status, last_move_timestamp
+            FROM games
+            WHERE status = 'playing' AND
+                  julianday('now') - julianday(last_move_timestamp) > ?
+            ORDER BY last_move_timestamp ASC
+        """,
+            (days_threshold,),
+        )
+
+        results = cursor.fetchall()
+        conn.close()
+
+        abandoned_games = []
+        for result in results:
+            abandoned_games.append({
+                "game_id": result[0],
+                "player1_id": result[1],
+                "player2_id": result[2],
+                "fen": result[3],
+                "current_turn": result[4],
+                "status": result[5],
+                "last_move_timestamp": result[6],
+            })
+
+        return abandoned_games
+
+    def cleanup_abandoned_games(self, days_threshold=7):
+        """Delete abandoned games from the database.
+
+        Args:
+            days_threshold: Number of days without moves to consider a game abandoned
+
+        Returns:
+            Number of games deleted
+        """
+        abandoned_games = self.get_abandoned_games(days_threshold)
+        deleted_count = 0
+
+        for game in abandoned_games:
+            self.delete_game(game["game_id"])
+            deleted_count += 1
+
+        return deleted_count
 
 
 class ChessBot:

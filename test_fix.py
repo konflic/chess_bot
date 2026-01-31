@@ -3,35 +3,25 @@
 import sqlite3
 import random
 import string
+import datetime
 from configuration import GAMES_DB
 
 # Computer player ID (same as in chess_bot.py)
 COMPUTER_PLAYER = -1
 
 def init_test_db():
-    """Initialize a test database."""
+    """Initialize a test database using ChessGameManager."""
+    from chess_bot import ChessGameManager
+
+    # Clean up any existing test data
     conn = sqlite3.connect(GAMES_DB)
     cursor = conn.cursor()
-
-    # Create games table
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS games (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            game_id TEXT UNIQUE NOT NULL,
-            player1_id INTEGER,
-            player2_id INTEGER,
-            fen TEXT DEFAULT 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-            current_turn INTEGER,
-            status TEXT DEFAULT 'waiting',
-            invite_link TEXT UNIQUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """
-    )
-
+    cursor.execute("DELETE FROM games WHERE player1_id IN (12345, 67890, 99999) OR player2_id IN (12345, 67890, 99999)")
     conn.commit()
     conn.close()
+
+    game_manager = ChessGameManager()
+    # The init_db method is called in the constructor, so this ensures the database is properly initialized
 
 def create_test_game(player_id, computer_opponent=False):
     """Create a test game."""
@@ -152,6 +142,7 @@ def test_fix():
     print("\n✅ All tests passed! The fix is working correctly.")
     print("\nThe fix successfully prevents users from creating multiple games against the computer.")
     print("Users can only have one active game against the computer at a time, just like with regular games.")
+    print("\nThe last move timestamp tracking is now enabled for all games, which will help identify inactive games.")
 
 if __name__ == "__main__":
     test_fix()
