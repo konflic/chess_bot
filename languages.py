@@ -17,6 +17,7 @@ TRANSLATIONS = {
         # Game creation and joining
         "new_game_created": "New chess game created!",
         "existing_waiting_game": "You already have a waiting game!",
+        "existing_computer_game": "You already have an active game against the computer!",
         "game_id": "Game ID",
         "invite_code": "Invite code",
         "share_link": "Share this link to invite a friend",
@@ -113,7 +114,8 @@ TRANSLATIONS = {
         "welcome_move_format": "Просто введите ходы, например e2e4, Nf3 или O-O",
         # Game creation and joining
         "new_game_created": "Новая шахматная игра создана!",
-        "existing_waiting_game": "У вас уже есть ожидающая игра!",
+        "existing_waiting_game": "У вас уже есть активная игра против компьютера!",
+        "existing_computer_game": "У вас уже есть активная игра против компьютера!",
         "game_id": "ID игры",
         "invite_code": "Код приглашения",
         "share_link": "Поделитесь этой ссылкой, чтобы пригласить друга",

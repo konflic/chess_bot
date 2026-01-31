@@ -1811,12 +1811,44 @@ class ChessBot:
         """Start a new game against the computer."""
         user = update.effective_user
         player_id = user.id
+        user_language = user.language_code
+
+        # Check if user already has an active game against computer
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT game_id FROM games
+            WHERE (player1_id = ? OR player2_id = ?) AND
+                  ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?)) AND
+                  status = 'playing'
+            ORDER BY created_at DESC
+            LIMIT 1
+        """,
+            (player_id, player_id, player_id, COMPUTER_PLAYER, COMPUTER_PLAYER, player_id),
+        )
+
+        existing_computer_game = cursor.fetchone()
+
+        if existing_computer_game:
+            # User already has an active game against computer
+            game_id = existing_computer_game[0]
+
+            # Set this as the active game for the player
+            self.set_active_game(player_id, game_id)
+
+            await update.message.reply_text(
+                f"❌ {language_manager.get_message('existing_computer_game', player_id, user_language)}\n\n"
+                f"{language_manager.get_message('game_id', player_id)}: <code>{game_id}</code>\n"
+                f"{language_manager.get_message('check_active_games', player_id)} <code>/active_games</code>",
+                parse_mode="HTML",
+            )
+            conn.close()
+            return
 
         # Randomly decide if player is white or black
         player_is_white = random.choice([True, False])
-
-        conn = sqlite3.connect(self.game_manager.db_path)
-        cursor = conn.cursor()
 
         # Generate game ID and invite link
         game_id = "".join(random.choices(string.ascii_letters + string.digits, k=10))
