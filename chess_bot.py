@@ -94,8 +94,10 @@ class ChessGameManager:
             """
             CREATE TABLE IF NOT EXISTS ping_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                player_id INTEGER UNIQUE,
-                last_ping_time TIMESTAMP
+                game_id TEXT,
+                player_id INTEGER,
+                last_ping_time TIMESTAMP,
+                UNIQUE(game_id, player_id)
             )
         """
         )
@@ -336,8 +338,8 @@ class ChessBot:
         self.game_manager = ChessGameManager()
         self.setup_handlers()
 
-        # Dictionary to store the last ping time for each user
-        self.last_ping = {}  # {user_id: datetime}
+        # Dictionary to store the last ping time for each game
+        self.last_ping = {}  # {(game_id, user_id): datetime}
 
         # Dictionary to store active game for each user
         self.active_games = {}  # {user_id: game_id}
@@ -360,7 +362,10 @@ class ChessBot:
 
         for player_id, last_ping_time in results:
             # Convert string timestamp to datetime object
-            self.last_ping[player_id] = datetime.datetime.fromisoformat(last_ping_time)
+            # Note: We can't determine the game_id from the current table structure
+            # So we'll store it with a placeholder game_id for now
+            # This will be updated when pings are sent
+            self.last_ping[("unknown", player_id)] = datetime.datetime.fromisoformat(last_ping_time)
 
         conn.close()
 
@@ -1356,28 +1361,30 @@ class ChessBot:
             )
             return
 
-        # Check if the user has already sent a ping in the last 30 minutes
+        # Check if the user has already sent a ping for this specific game in the last 30 minutes
         now = datetime.datetime.now()
-        if player_id in self.last_ping:
-            time_since_last_ping = now - self.last_ping[player_id]
+        ping_key = (game_id, player_id)
+
+        if ping_key in self.last_ping:
+            time_since_last_ping = now - self.last_ping[ping_key]
             if time_since_last_ping.total_seconds() < 1800:  # 30 minutes = 1800 seconds
                 await update.message.reply_text(language_manager.get_message("ping_cooldown", user.id, user_language))
                 return
 
-        # Update the last ping time in memory
-        self.last_ping[player_id] = now
+        # Update the last ping time in memory for this specific game
+        self.last_ping[ping_key] = now
 
-        # Update the last ping time in the database
+        # Update the last ping time in the database for this specific game
         conn = sqlite3.connect(self.game_manager.db_path)
         cursor = conn.cursor()
 
         # Use REPLACE to handle both insert and update cases
         cursor.execute(
             """
-            REPLACE INTO ping_history (player_id, last_ping_time)
-            VALUES (?, ?)
+            REPLACE INTO ping_history (game_id, player_id, last_ping_time)
+            VALUES (?, ?, ?)
         """,
-            (player_id, now.isoformat()),
+            (game_id, player_id, now.isoformat()),
         )
 
         conn.commit()
@@ -1406,13 +1413,14 @@ class ChessBot:
         except Exception as e:
             print(f"Could not send ping to opponent {opponent_id}: {e}")
             # If we couldn't send the message, don't count this as a ping
-            if player_id in self.last_ping:
-                del self.last_ping[player_id]
+            ping_key = (game_id, player_id)
+            if ping_key in self.last_ping:
+                del self.last_ping[ping_key]
 
                 # Also remove from database
                 conn = sqlite3.connect(self.game_manager.db_path)
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM ping_history WHERE player_id = ?", (player_id,))
+                cursor.execute("DELETE FROM ping_history WHERE game_id = ? AND player_id = ?", (game_id, player_id))
                 conn.commit()
                 conn.close()
 
