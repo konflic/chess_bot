@@ -559,12 +559,9 @@ class ChessBot:
             f"<b>{language_manager.get_message('welcome_title', user.id, user_language)}</b> v{BOT_VERSION}\n\n"
             f"{language_manager.get_message('welcome_intro', user.id, user_language)}\n\n"
             f"<b>{language_manager.get_message('welcome_quick_start', user.id, user_language)}</b>\n"
-            f"{language_manager.get_message('welcome_newgame', user.id)}\n"
-            f"{language_manager.get_message('welcome_current_game', user.id)}\n"
             f"{language_manager.get_message('welcome_help', user.id)}\n\n"
             f"<b>{language_manager.get_message('welcome_how_to_play', user.id)}</b>\n"
             f"{language_manager.get_message('welcome_move_format', user.id)}\n\n"
-            f"<i>{language_manager.get_message('command_menu_hint', user.id, user_language)}</i>"
         )
 
         await update.message.reply_text(welcome_message, parse_mode="HTML")
@@ -1748,33 +1745,8 @@ class ChessBot:
 
         # Handle play vs computer
         elif data.startswith("playvs"):
-            # Create a new game with the computer opponent
-            game_id, _ = self.game_manager.create_game(player_id, True)
-
-            # Set this as the active game for the player
-            self.set_active_game(player_id, game_id)
-
-            # Get the initial board state
-            board = chess.Board()
-            png_file = self.render_board(board, game_id)
-
-            # Edit the message to show the new game
-            await query.edit_message_text(
-                "New game started against Computer.\nYou are playing as White. Your turn!",
-                parse_mode="HTML",
-            )
-
-            # Send the initial board to the player
-            with open(png_file, "rb") as f:
-                await context.bot.send_photo(
-                    chat_id=player_id,
-                    photo=f,
-                    caption="New game started against Computer.\nYou are playing as White. Your turn!",
-                    parse_mode="HTML",
-                )
-
-            # Clean up temp file
-            os.unlink(png_file)
+            # Call the play_vs_computer method to handle the game creation with random color
+            await self.play_vs_computer(update, context)
 
     async def play_vs_computer(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start a new game against the computer."""
@@ -1782,8 +1754,43 @@ class ChessBot:
         player_id = user.id
         user_language = user.language_code
 
-        # Create a new game with the computer opponent
-        game_id, _ = self.game_manager.create_game(player_id, True)
+        # Randomly decide if player is white or black
+        player_is_white = random.choice([True, False])
+
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        # Generate game ID and invite link
+        game_id = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+        invite_link = "".join(random.choices(string.ascii_letters + string.digits, k=12))
+
+        try:
+            if player_is_white:
+                # Player is white, computer is black
+                cursor.execute(
+                    """
+                    INSERT INTO games (game_id, player1_id, player2_id, current_turn, invite_link, status)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (game_id, player_id, COMPUTER_PLAYER, player_id, invite_link, "playing"),
+                )
+            else:
+                # Player is black, computer is white
+                cursor.execute(
+                    """
+                    INSERT INTO games (game_id, player1_id, player2_id, current_turn, invite_link, status)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (game_id, COMPUTER_PLAYER, player_id, COMPUTER_PLAYER, invite_link, "playing"),
+                )
+
+            conn.commit()
+        except sqlite3.IntegrityError:
+            # If there's a collision, try again with a new ID
+            conn.close()
+            return await self.play_vs_computer(update, context)
+
+        conn.close()
 
         # Set this as the active game for the player
         self.set_active_game(player_id, game_id)
@@ -1792,16 +1799,26 @@ class ChessBot:
         board = chess.Board()
         png_file = self.render_board(board, game_id)
 
+        # Determine message based on player's color
+        if player_is_white:
+            caption = "New game started against Computer.\nYou are playing as White. Your turn!"
+        else:
+            caption = "New game started against Computer.\nYou are playing as Black. Computer's turn..."
+
         # Send the initial board to the player
         with open(png_file, "rb") as f:
             await update.message.reply_photo(
                 photo=f,
-                caption="New game started against Computer.\nYou are playing as White. Your turn!",
+                caption=caption,
                 parse_mode="HTML",
             )
 
         # Clean up temp file
         os.unlink(png_file)
+
+        # If player is black, make the first move for the computer
+        if not player_is_white:
+            await self.make_computer_move(game_id, COMPUTER_PLAYER, context, user)
 
     async def make_computer_move(self, game_id, computer_id, context, user):
         """Generate and make a move for the computer player."""
