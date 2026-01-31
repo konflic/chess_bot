@@ -39,8 +39,8 @@ TRANSLATIONS = {
         "waiting_opponent": "Waiting for opponent to move...",
         "has_joined": "has joined game!",
         "player_joined": "Player has joined your game!",
-        "not_in_active_game": "You're not in an active game. Start one with /newgame",
-        "no_active_games": "You don't have any active games. Start one with /newgame",
+        "not_in_active_game": "You're not in an active game. Start one with /newgame or choose one /active_games",
+        "no_active_games": "You don't have any active games. Start one with /newgame or choose one /active_games",
         # Game play
         "current_active_game": "Current Active Game",
         "opponent": "Opponent",
@@ -136,8 +136,8 @@ TRANSLATIONS = {
         "waiting_opponent": "Ожидание хода соперника...",
         "has_joined": "присоединился к игре!",
         "player_joined": "Игрок присоединился к вашей игре!",
-        "not_in_active_game": "Вы не участвуете в активной игре. Начните с /newgame",
-        "no_active_games": "У вас нет активных игр. Начните с /newgame",
+        "not_in_active_game": "Вы не участвуете в активной игре. Начните с /newgame или выберете игру /active_games",
+        "no_active_games": "У вас нет активных игр. Начните с /newgame или выберете игру /active_games",
         # Game play
         "current_active_game": "Текущая активная игра",
         "opponent": "Соперник",

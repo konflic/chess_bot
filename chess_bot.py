@@ -1811,7 +1811,6 @@ class ChessBot:
         """Start a new game against the computer."""
         user = update.effective_user
         player_id = user.id
-        user_language = user.language_code
 
         # Randomly decide if player is white or black
         player_is_white = random.choice([True, False])
