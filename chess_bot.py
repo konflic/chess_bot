@@ -21,7 +21,6 @@ import time
 from configuration import BOT_NAME, BOT_VERSION, GAMES_DB, language_manager
 from motivational_quotes import get_motivational_quote
 import datetime
-from board_recognition import BoardRecognizer
 
 # Computer player ID
 COMPUTER_PLAYER = -1
@@ -479,7 +478,6 @@ class ChessBot:
         # Create application with post_init hook for setting up commands
         self.application = Application.builder().token(token).post_init(self.post_init_tasks).build()
         self.game_manager = ChessGameManager()
-        self.board_recognizer = BoardRecognizer()
         self.setup_handlers()
 
         # Dictionary to store the last ping time for each game
@@ -575,8 +573,6 @@ class ChessBot:
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("fengame", self.fen_game))
         self.application.add_handler(CommandHandler("fengame_delete", self.fengame_delete))
-        self.application.add_handler(CommandHandler("boardtofen", self.board_to_fen))
-        self.application.add_handler(CommandHandler("boardgame", self.board_game))
         self.application.add_handler(CommandHandler("playvs", self.play_vs_computer))
         self.application.add_handler(CommandHandler("status", self.current_game))
         self.application.add_handler(CommandHandler("active_games", self.active_games_command))
@@ -587,7 +583,6 @@ class ChessBot:
         self.application.add_handler(CommandHandler("ping", self.ping_opponent))
         self.application.add_handler(CommandHandler("board", self.show_board))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move))
-        self.application.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
 
         # Add callback query handler for inline buttons
         from telegram.ext import CallbackQueryHandler
@@ -602,8 +597,6 @@ class ChessBot:
             BotCommand("newgame", "Create a new chess game"),
             BotCommand("fengame", "Create a game from a FEN string"),
             BotCommand("fengame_delete", "Delete a FEN game by ID"),
-            BotCommand("boardtofen", "Convert a board image to FEN"),
-            BotCommand("boardgame", "Create a game from a board image"),
             BotCommand("playvs", "Play against computer"),
             BotCommand("status", "Show your current active game"),
             BotCommand("active_games", "List all your active games"),
@@ -891,14 +884,6 @@ class ChessBot:
             )
             return
 
-        # Additional FEN validation using BoardRecognizer
-        if not self.board_recognizer.validate_fen(fen_string):
-            await update.message.reply_text(
-                "Invalid FEN string: The position is not valid.\n\n"
-                "Please check your FEN string and try again.",
-                parse_mode="HTML",
-            )
-            return
 
         # Create a game with the custom position
         if color_preference == "white":
@@ -1031,220 +1016,6 @@ class ChessBot:
             parse_mode="HTML",
         )
 
-    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle photo uploads for custom game creation."""
-        user = update.effective_user
-        player_id = user.id
-        user_language = user.language_code
-
-        # Check if we're expecting a photo for board recognition
-        if context.user_data.get("awaiting_board_image", False):
-            # Download the photo
-            photo_file = await update.message.photo[-1].get_file()
-            photo_path = f"tmp/custom_board_{player_id}_{int(time.time())}.jpg"
-
-            # Ensure tmp directory exists
-            os.makedirs("tmp", exist_ok=True)
-
-            await photo_file.download_to_drive(photo_path)
-
-            # Process the image to get FEN
-            await update.message.reply_text("Processing your chess board image... This may take a moment.")
-
-            # Recognize the board and get FEN
-            fen = self.board_recognizer.recognize_board(photo_path)
-
-            if fen and self.board_recognizer.validate_fen(fen):
-                # Generate a board image from the recognized FEN
-                board_image_path = self.board_recognizer.save_board_image(fen)
-
-                if board_image_path:
-                    # Send the recognized board image and FEN
-                    with open(board_image_path, "rb") as f:
-                        await update.message.reply_photo(
-                            photo=f,
-                            caption=(
-                                f"<b>Board recognized!</b>\n\n"
-                                f"<b>FEN:</b> <code>{fen}</code>\n\n"
-                                f"To create a game with this position, use:\n"
-                                f"<code>/fengame {fen} white</code>\n"
-                                f"or\n"
-                                f"<code>/fengame {fen} black</code>"
-                            ),
-                            parse_mode="HTML",
-                        )
-
-                    # Clean up
-                    os.unlink(board_image_path)
-                else:
-                    await update.message.reply_text("Error generating board image from the recognized FEN.")
-            else:
-                await update.message.reply_text(
-                    "Sorry, I couldn't recognize a valid chess board in your image. "
-                    "Please make sure the board is clearly visible and try again."
-                )
-
-            # Clean up
-            os.unlink(photo_path)
-
-            # Reset the awaiting flag
-            context.user_data["awaiting_board_image"] = False
-            return
-
-        # Check if we're expecting a photo for board game
-        elif context.user_data.get("awaiting_board_game", False):
-            # Download the photo
-            photo_file = await update.message.photo[-1].get_file()
-            photo_path = f"tmp/custom_board_{player_id}_{int(time.time())}.jpg"
-
-            # Ensure tmp directory exists
-            os.makedirs("tmp", exist_ok=True)
-
-            await photo_file.download_to_drive(photo_path)
-
-            # Process the image to get FEN
-            await update.message.reply_text("Processing your chess board image... This may take a moment.")
-
-            # Recognize the board and get FEN
-            fen = self.board_recognizer.recognize_board(photo_path)
-
-            if fen and self.board_recognizer.validate_fen(fen):
-                # Store the FEN in user_data
-                context.user_data["board_game_fen"] = fen
-                context.user_data["awaiting_board_game_info"] = True
-
-                # Generate a board image from the recognized FEN
-                board_image_path = self.board_recognizer.save_board_image(fen)
-
-                if board_image_path:
-                    # Send the recognized board image and ask for turn and color
-                    with open(board_image_path, "rb") as f:
-                        await update.message.reply_photo(
-                            photo=f,
-                            caption=(
-                                f"<b>Board recognized!</b>\n\n"
-                                f"<b>FEN:</b> <code>{fen}</code>\n\n"
-                                f"Please specify whose turn it is (white/black) and which color you want to play as.\n"
-                                f"For example: <code>white white</code> (first is turn, second is your color)"
-                            ),
-                            parse_mode="HTML",
-                        )
-
-                    # Clean up
-                    os.unlink(board_image_path)
-                else:
-                    await update.message.reply_text("Error generating board image from the recognized FEN.")
-            else:
-                await update.message.reply_text(
-                    "Sorry, I couldn't recognize a valid chess board in your image. "
-                    "Please make sure the board is clearly visible and try again."
-                )
-
-            # Clean up
-            os.unlink(photo_path)
-            return
-
-        # Check if we're expecting a photo for custom game
-        elif context.user_data.get("awaiting_custom_board", False):
-            # Download the photo
-            photo_file = await update.message.photo[-1].get_file()
-            photo_path = f"tmp/custom_board_{player_id}_{int(time.time())}.jpg"
-
-            # Ensure tmp directory exists
-            os.makedirs("tmp", exist_ok=True)
-
-            await photo_file.download_to_drive(photo_path)
-
-            # Store the photo path in user_data
-            context.user_data["custom_board_photo"] = photo_path
-            context.user_data["awaiting_turn_info"] = True
-
-            # Ask for turn information
-            await update.message.reply_text(
-                f"{language_manager.get_message('custom_game_thanks', user.id, user_language)}\n\n"
-                f"{language_manager.get_message('custom_game_turn_question', user.id, user_language)}\n"
-                f"{language_manager.get_message('custom_game_color_question', user.id, user_language)}\n\n"
-                f"{language_manager.get_message('custom_game_example', user.id, user_language)}"
-            )
-
-        # If not expecting a photo, ignore
-        return
-
-    async def board_to_fen(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Command to convert a board image to FEN."""
-        user = update.effective_user
-
-        # Set flag to expect a photo
-        context.user_data["awaiting_board_image"] = True
-
-        # Instruct the user to upload a photo
-        await update.message.reply_text(
-            "<b>Convert a chess board image to FEN</b>\n\n"
-            "Please upload a clear photo of a chess board. The board should be:\n"
-            "• Well-lit and clearly visible\n"
-            "• Taken from directly above\n"
-            "• The entire board should be in the frame\n\n"
-            "I'll analyze the image and convert it to a FEN string that you can use "
-            "to create a custom game with /fengame.",
-            parse_mode="HTML",
-        )
-
-    async def board_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Command to create a game directly from a board image."""
-        user = update.effective_user
-        player_id = user.id
-        user_language = user.language_code
-
-        # Check if user already has an unused FEN game invite
-        conn = sqlite3.connect(self.game_manager.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            SELECT game_id, invite_link FROM games
-            WHERE player1_id = ? AND player2_id IS NULL AND status = 'waiting'
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            (player_id,),
-        )
-
-        existing_game = cursor.fetchone()
-        conn.close()
-
-        if existing_game:
-            # User already has a waiting game, return the existing link
-            game_id, invite_link = existing_game
-
-            # Set this as the active game for the player
-            self.set_active_game(player_id, game_id)
-
-            deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
-
-            invite_message = (
-                f"<b>You already have an unused game invite:</b>\n\n"
-                f"<b>Game ID:</b> <code>{game_id}</code>\n"
-                f"<b>Invite code:</b> <code>{invite_link}</code>\n\n"
-                f"<b>Share this link to invite a friend:</b>\n{deep_link}\n\n"
-                f"To delete this game and create a new one, use:\n"
-                f"<code>/fengame_delete {game_id}</code>"
-            )
-            await update.message.reply_text(invite_message, parse_mode="HTML")
-            return
-
-        # Set flag to expect a photo
-        context.user_data["awaiting_board_game"] = True
-
-        # Instruct the user to upload a photo
-        await update.message.reply_text(
-            "<b>Create a game from a board image</b>\n\n"
-            "Please upload a clear photo of a chess board. The board should be:\n"
-            "• Well-lit and clearly visible\n"
-            "• Taken from directly above\n"
-            "• The entire board should be in the frame\n\n"
-            "After uploading, you'll need to specify whose turn it is and which color you want to play as.",
-            parse_mode="HTML",
-        )
 
     async def handle_move(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle chess moves."""
@@ -1253,115 +1024,6 @@ class ChessBot:
         user_language = user.language_code
         message_text = update.message.text.strip().lower()
 
-        # Check if we're waiting for board game info
-        if context.user_data.get("awaiting_board_game_info", False):
-            # Parse the turn and color preference
-            parts = message_text.split()
-            if len(parts) != 2:
-                await update.message.reply_text(
-                    "Please provide both whose turn it is and your color preference.\n"
-                    "For example: <code>white white</code> (first is turn, second is your color)",
-                    parse_mode="HTML",
-                )
-                return
-
-            turn, color_preference = parts
-
-            # Validate turn and color preference
-            if turn not in ["white", "black"] or color_preference not in ["white", "black"]:
-                await update.message.reply_text(
-                    "Invalid input. Both turn and color must be either 'white' or 'black'.\n"
-                    "For example: <code>white white</code> (first is turn, second is your color)",
-                    parse_mode="HTML",
-                )
-                return
-
-            # Get the FEN from user_data
-            fen = context.user_data.get("board_game_fen")
-            if not fen:
-                await update.message.reply_text(
-                    "Error: FEN string not found. Please try again with /boardgame.",
-                    parse_mode="HTML",
-                )
-                return
-
-            # Modify the FEN to set the correct turn
-            fen_parts = fen.split(" ")
-            fen_parts[1] = "w" if turn == "white" else "b"
-            fen = " ".join(fen_parts)
-
-            # Create a game with the custom position
-            if color_preference == "white":
-                # Player is white
-                game_id, invite_link = self.game_manager.create_game(
-                    player_id, computer_opponent=False, custom_fen=fen
-                )
-            else:
-                # Player is black, create a game where player2 will be the creator
-                # We'll create a temporary game and then update it
-                game_id, invite_link = self.game_manager.create_game(
-                    player_id, computer_opponent=False, custom_fen=fen
-                )
-
-                # Update the game to swap player positions
-                conn = sqlite3.connect(self.game_manager.db_path)
-                cursor = conn.cursor()
-
-                # Get the current turn from the FEN
-                board = chess.Board(fen)
-                current_turn = "player1_id" if board.turn else "player2_id"
-
-                cursor.execute(
-                    """
-                    UPDATE games
-                    SET player1_id = NULL, player2_id = ?, current_turn = ?
-                    WHERE game_id = ?
-                    """,
-                    (
-                        player_id,
-                        player_id if current_turn == "player2_id" else None,
-                        game_id,
-                    ),
-                )
-
-                conn.commit()
-                conn.close()
-
-            # Set this as the active game for the player
-            self.set_active_game(player_id, game_id)
-
-            # Generate a deep link for the invite
-            deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
-
-            # Render the board image
-            board = chess.Board(fen)
-            png_file = self.render_board(board, game_id)
-
-            # Send the game information
-            with open(png_file, "rb") as f:
-                await update.message.reply_photo(
-                    photo=f,
-                    caption=(
-                        f"<b>Custom game created from your board image!</b>\n\n"
-                        f"<b>Game ID:</b> <code>{game_id}</code>\n"
-                        f"<b>Invite code:</b> <code>{invite_link}</code>\n\n"
-                        f"<b>Share this link to invite a friend:</b>\n{deep_link}\n\n"
-                        f"You are playing as {color_preference}. "
-                        f"{'Your turn!' if (color_preference == 'white' and board.turn) or (color_preference == 'black' and not board.turn) else 'Waiting for opponent to move.'}"
-                    ),
-                    parse_mode="HTML",
-                )
-
-            # Clean up
-            os.unlink(png_file)
-
-            # Reset the flags
-            context.user_data["awaiting_board_game_info"] = False
-            context.user_data["awaiting_board_game"] = False
-            if "board_game_fen" in context.user_data:
-                del context.user_data["board_game_fen"]
-
-            return
 
         # Check if the message is a valid move format
         if not self.is_valid_move_format(message_text):
