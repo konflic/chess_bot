@@ -575,6 +575,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("fengame", self.fen_game))
         self.application.add_handler(CommandHandler("fengame_delete", self.fengame_delete))
+        self.application.add_handler(CommandHandler("boardtofen", self.board_to_fen))
         self.application.add_handler(CommandHandler("playvs", self.play_vs_computer))
         self.application.add_handler(CommandHandler("status", self.current_game))
         self.application.add_handler(CommandHandler("active_games", self.active_games_command))
@@ -585,6 +586,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("ping", self.ping_opponent))
         self.application.add_handler(CommandHandler("board", self.show_board))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move))
+        self.application.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
 
         # Add callback query handler for inline buttons
         from telegram.ext import CallbackQueryHandler
