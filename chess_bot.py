@@ -20,10 +20,12 @@ import time
 
 from configuration import BOT_NAME, BOT_VERSION, GAMES_DB, language_manager
 from motivational_quotes import get_motivational_quote
+from board_recognition import BoardRecognizer
 import datetime
 
 # Computer player ID
 COMPUTER_PLAYER = -1
+
 
 class ComputerEngine:
     """A simple chess engine for computer opponents."""
@@ -186,12 +188,13 @@ class ChessGameManager:
         """Generate a unique invite link for a game."""
         return "".join(random.choices(string.ascii_letters + string.digits, k=12))
 
-    def create_game(self, player1_id, computer_opponent=False):
+    def create_game(self, player1_id, computer_opponent=False, custom_fen=None):
         """Create a new game and return the game ID and invite link.
 
         Args:
             player1_id: The ID of the player creating the game
             computer_opponent: Boolean indicating if this is a game against computer
+            custom_fen: Optional FEN string for custom board state
         """
         game_id = "".join(random.choices(string.ascii_letters + string.digits, k=10))
         invite_link = self.generate_invite_link()
@@ -204,19 +207,33 @@ class ChessGameManager:
                 # Create a game with a computer opponent
                 cursor.execute(
                     """
-                    INSERT INTO games (game_id, player1_id, player2_id, current_turn, invite_link, status)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO games (game_id, player1_id, player2_id, current_turn, invite_link, status, fen)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                    (game_id, player1_id, COMPUTER_PLAYER, player1_id, invite_link, "playing"),
+                    (
+                        game_id,
+                        player1_id,
+                        COMPUTER_PLAYER,
+                        player1_id,
+                        invite_link,
+                        "playing",
+                        custom_fen if custom_fen else "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    ),
                 )
             else:
                 # Create a regular game waiting for a human opponent
                 cursor.execute(
                     """
-                    INSERT INTO games (game_id, player1_id, current_turn, invite_link)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO games (game_id, player1_id, current_turn, invite_link, fen)
+                    VALUES (?, ?, ?, ?, ?)
                 """,
-                    (game_id, player1_id, player1_id, invite_link),
+                    (
+                        game_id,
+                        player1_id,
+                        player1_id,
+                        invite_link,
+                        custom_fen if custom_fen else "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    ),
                 )
 
             conn.commit()
@@ -225,7 +242,7 @@ class ChessGameManager:
             return game_id, invite_link
         except sqlite3.IntegrityError:
             # If there's a collision, try again with a new ID
-            return self.create_game(player1_id, computer_opponent)
+            return self.create_game(player1_id, computer_opponent, custom_fen)
 
     def join_game(self, invite_link, player2_id):
         """Join a game using an invite link."""
@@ -420,15 +437,17 @@ class ChessGameManager:
 
         abandoned_games = []
         for result in results:
-            abandoned_games.append({
-                "game_id": result[0],
-                "player1_id": result[1],
-                "player2_id": result[2],
-                "fen": result[3],
-                "current_turn": result[4],
-                "status": result[5],
-                "last_move_timestamp": result[6],
-            })
+            abandoned_games.append(
+                {
+                    "game_id": result[0],
+                    "player1_id": result[1],
+                    "player2_id": result[2],
+                    "fen": result[3],
+                    "current_turn": result[4],
+                    "status": result[5],
+                    "last_move_timestamp": result[6],
+                }
+            )
 
         return abandoned_games
 
@@ -553,6 +572,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
+        self.application.add_handler(CommandHandler("customgame", self.custom_game))
         self.application.add_handler(CommandHandler("playvs", self.play_vs_computer))
         self.application.add_handler(CommandHandler("status", self.current_game))
         self.application.add_handler(CommandHandler("active_games", self.active_games_command))
@@ -563,6 +583,9 @@ class ChessBot:
         self.application.add_handler(CommandHandler("ping", self.ping_opponent))
         self.application.add_handler(CommandHandler("board", self.show_board))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move))
+
+        # Add handler for photos (for custom game from PNG)
+        self.application.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
 
         # Add callback query handler for inline buttons
         from telegram.ext import CallbackQueryHandler
@@ -575,6 +598,7 @@ class ChessBot:
             BotCommand("start", "Start bot and see main menu"),
             BotCommand("help", "Show all available commands"),
             BotCommand("newgame", "Create a new chess game"),
+            # BotCommand("customgame", "Create a game from a custom board position"),
             BotCommand("playvs", "Play against computer"),
             BotCommand("status", "Show your current active game"),
             BotCommand("active_games", "List all your active games"),
@@ -779,6 +803,381 @@ class ChessBot:
             )
             await update.message.reply_text(invite_message, parse_mode="HTML")
 
+    async def custom_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start a new game with a custom board position."""
+        user = update.effective_user
+        user_language = user.language_code
+
+        # Store in user_data that we're waiting for a photo
+        context.user_data["awaiting_custom_board"] = True
+
+        instructions = (
+            f"<b>{language_manager.get_message('custom_game_title', user.id, user_language)}</b>\n\n"
+            f"{language_manager.get_message('custom_game_instructions', user.id, user_language)}\n\n"
+            f"{language_manager.get_message('custom_game_step1', user.id, user_language)}\n"
+            f"{language_manager.get_message('custom_game_step2', user.id, user_language)}\n"
+            f"{language_manager.get_message('custom_game_step3', user.id, user_language)}\n\n"
+            f"{language_manager.get_message('custom_game_example', user.id, user_language)}"
+        )
+
+        await update.message.reply_text(instructions, parse_mode="HTML")
+
+    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle photo uploads for custom game creation."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+
+        # Check if we're expecting a photo for custom game
+        if not context.user_data.get("awaiting_custom_board", False):
+            # Not expecting a photo, ignore
+            return
+
+        # Download the photo
+        photo_file = await update.message.photo[-1].get_file()
+        photo_path = f"tmp/custom_board_{player_id}_{int(time.time())}.png"
+
+        # Ensure tmp directory exists
+        os.makedirs("tmp", exist_ok=True)
+
+        await photo_file.download_to_drive(photo_path)
+
+        # Store the photo path in user_data
+        context.user_data["custom_board_photo"] = photo_path
+        context.user_data["awaiting_turn_info"] = True
+
+        # Ask for turn information
+        await update.message.reply_text(
+            f"{language_manager.get_message('custom_game_thanks', user.id, user_language)}\n\n"
+            f"{language_manager.get_message('custom_game_turn_question', user.id, user_language)}\n"
+            f"{language_manager.get_message('custom_game_color_question', user.id, user_language)}\n\n"
+            f"{language_manager.get_message('custom_game_example', user.id, user_language)}"
+        )
+
+    async def handle_move(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle chess moves and custom game setup messages."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+        message_text = update.message.text.strip().lower()
+
+        # Check if we're waiting for turn information for a custom game
+        if context.user_data.get("awaiting_turn_info", False) and context.user_data.get("custom_board_photo"):
+            # Parse the turn information
+            # Expected format: "[color] turn, I play as [color]"
+            turn_color = None
+            player_color = None
+
+            if "white turn" in message_text:
+                turn_color = "white"
+            elif "black turn" in message_text:
+                turn_color = "black"
+
+            if "play as white" in message_text:
+                player_color = "white"
+            elif "play as black" in message_text:
+                player_color = "black"
+
+            if not turn_color or not player_color:
+                await update.message.reply_text(
+                    f"{language_manager.get_message('custom_game_parse_error', user.id, user_language)}\n\n"
+                    f"{language_manager.get_message('custom_game_example', user.id, user_language)}"
+                )
+                return
+
+            # Process the custom board image
+            photo_path = context.user_data["custom_board_photo"]
+
+            # For now, we'll use a standard starting position
+            # In a real implementation, this would analyze the image
+            board = BoardRecognizer.process_image(photo_path)
+
+            if not board:
+                await update.message.reply_text(
+                    language_manager.get_message("custom_game_recognition_error", user.id, user_language)
+                )
+                return
+
+            # Set the turn in the board
+            board = BoardRecognizer.set_turn(board, turn_color)
+
+            # Get the FEN string
+            custom_fen = board.fen()
+
+            # Create a game with the custom position
+            if player_color == "white":
+                # Player is white
+                game_id, invite_link = self.game_manager.create_game(
+                    player_id, computer_opponent=False, custom_fen=custom_fen
+                )
+            else:
+                # Player is black, create a game where player2 will be the creator
+                # We'll create a temporary game and then update it
+                game_id, invite_link = self.game_manager.create_game(
+                    player_id, computer_opponent=False, custom_fen=custom_fen
+                )
+
+                # Update the game to swap player positions
+                conn = sqlite3.connect(self.game_manager.db_path)
+                cursor = conn.cursor()
+
+                # Get the current turn from the FEN
+                current_turn = "player1_id" if turn_color == "white" else "player2_id"
+
+                cursor.execute(
+                    """
+                    UPDATE games
+                    SET player1_id = NULL, player2_id = ?, current_turn = ?
+                    WHERE game_id = ?
+                    """,
+                    (player_id, player_id if current_turn == "player2_id" else None, game_id),
+                )
+
+                conn.commit()
+                conn.close()
+
+            # Set this as the active game for the player
+            self.set_active_game(player_id, game_id)
+
+            # Generate a deep link for the invite
+            deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
+
+            # Render the board image
+            png_file = self.render_board(board, game_id)
+
+            # Send the game information
+            with open(png_file, "rb") as f:
+                await update.message.reply_photo(
+                    photo=f,
+                    caption=(
+                        f"<b>{language_manager.get_message('custom_game_created', user.id, user_language)}</b>\n\n"
+                        f"<b>{language_manager.get_message('game_id', user.id)}:</b> <code>{game_id}</code>\n"
+                        f"<b>{language_manager.get_message('invite_code', user.id)}:</b> <code>{invite_link}</code>\n\n"
+                        f"<b>{language_manager.get_message('share_link', user.id)}</b>\n{deep_link}\n\n"
+                        f"You are playing as {player_color}. "
+                        f"{'Your turn!' if (player_color == 'white' and turn_color == 'white') or (player_color == 'black' and turn_color == 'black') else 'Waiting for opponent to move.'}"
+                    ),
+                    parse_mode="HTML",
+                )
+
+            # Clean up
+            os.unlink(png_file)
+            if os.path.exists(photo_path):
+                os.unlink(photo_path)
+
+            # Clear the user_data
+            if "awaiting_custom_board" in context.user_data:
+                del context.user_data["awaiting_custom_board"]
+            if "custom_board_photo" in context.user_data:
+                del context.user_data["custom_board_photo"]
+            if "awaiting_turn_info" in context.user_data:
+                del context.user_data["awaiting_turn_info"]
+
+            return
+
+        # If not handling custom game setup, proceed with regular move handling
+        if not self.is_valid_move_format(message_text):
+            return  # Don't respond to non-move messages
+
+        # Rest of the original handle_move method
+        # Get the active game ID for this user
+        active_game_id = self.get_active_game(player_id)
+
+        # If no active game is set, check if the user has any games
+        if not active_game_id:
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT g.game_id
+                FROM games g
+                WHERE (g.player1_id = ? OR g.player2_id = ?) AND g.status = 'playing'
+                ORDER BY g.created_at DESC
+                LIMIT 1
+            """,
+                (player_id, player_id),
+            )
+
+            result = cursor.fetchone()
+            conn.close()
+
+            if result:
+                # Set the first game as active
+                active_game_id = result[0]
+                self.set_active_game(player_id, active_game_id)
+            else:
+                await update.message.reply_text(
+                    language_manager.get_message("not_in_active_game", user.id, user_language)
+                )
+                return
+
+        # Verify the game exists and the user is a participant
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT game_id FROM games
+            WHERE game_id = ? AND (player1_id = ? OR player2_id = ?) AND status = 'playing'
+        """,
+            (active_game_id, player_id, player_id),
+        )
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            await update.message.reply_text(language_manager.get_message("not_in_active_game", user.id, user_language))
+            return
+
+        game_id = active_game_id
+
+        # Make the move
+        result = self.game_manager.make_move(game_id, message_text, player_id)
+
+        if result["success"]:
+            # Get updated game info
+            game_info = self.game_manager.get_game(game_id)
+
+            # Create the board
+            board = chess.Board(result["new_fen"])
+
+            # Get PNG file path
+            png_file = self.render_board(board, game_id)
+
+            # Determine who's turn it is now
+            current_player = (
+                language_manager.get_message("white", user.id)
+                if game_info["current_turn"] == game_info["player1_id"]
+                else language_manager.get_message("black", user.id)
+            )
+
+            # Check if game is finished
+            if result["status"] == "finished":
+                # Get opponent ID
+                opponent_id = (
+                    game_info["player2_id"] if player_id == game_info["player1_id"] else game_info["player1_id"]
+                )
+
+                if result["winner"] == "draw":
+                    # DRAW - notify both players
+                    player_caption = f"🏁 {language_manager.get_message('game_draw', user.id, user_language)}"
+
+                    # Only send to opponent if it's a human (not a computer)
+                    opponent_caption = None
+                    if opponent_id != COMPUTER_PLAYER:  # Check if not computer
+                        opponent_caption = f"🏁 {language_manager.get_message('game_draw', opponent_id)}"
+
+                    # Send to player who made the move
+                    with open(png_file, "rb") as f:
+                        await update.message.reply_photo(photo=f, caption=player_caption, parse_mode="HTML")
+
+                    # Clean up temp file
+                    os.unlink(png_file)
+
+                    # Send to opponent if it's a human
+                    if opponent_id > 0 and opponent_caption:
+                        try:
+                            opponent_png_file = self.render_board(board, game_id)
+                            with open(opponent_png_file, "rb") as f:
+                                await context.bot.send_photo(
+                                    chat_id=opponent_id,
+                                    photo=f,
+                                    caption=opponent_caption,
+                                    parse_mode="HTML",
+                                )
+                            os.unlink(opponent_png_file)
+                        except Exception:
+                            pass  # Ignore if unable to send message
+
+                else:
+                    # CHECKMATE - one player wins, one loses
+                    is_winner = result["winner"] == player_id
+
+                    if is_winner:
+                        # Current player is the WINNER
+                        player_caption = f"🏆 {language_manager.get_message('checkmate_win', user.id, user_language)}"
+                        # Only set opponent caption if it's a human
+                        opponent_caption = None
+                        if opponent_id != COMPUTER_PLAYER:  # Check if not computer
+                            opponent_caption = f"💀 {language_manager.get_message('checkmate_lose', opponent_id)}"
+                    else:
+                        # Current player is the LOSER
+                        player_caption = f"💀 {language_manager.get_message('checkmate_lose', user.id, user_language)}"
+                        # Only set opponent caption if it's a human
+                        opponent_caption = None
+                        if opponent_id != COMPUTER_PLAYER:  # Check if not computer
+                            opponent_caption = f"🏆 {language_manager.get_message('checkmate_win', opponent_id)}"
+
+                    # Send to player who made the move
+                    with open(png_file, "rb") as f:
+                        await update.message.reply_photo(photo=f, caption=player_caption, parse_mode="HTML")
+
+                    # Clean up temp file
+                    os.unlink(png_file)
+
+                    # Send to opponent if it's a human
+                    if opponent_id > 0 and opponent_caption:
+                        try:
+                            opponent_png_file = self.render_board(board, game_id)
+                            with open(opponent_png_file, "rb") as f:
+                                await context.bot.send_photo(
+                                    chat_id=opponent_id,
+                                    photo=f,
+                                    caption=opponent_caption,
+                                    parse_mode="HTML",
+                                )
+                            os.unlink(opponent_png_file)
+                        except Exception:
+                            pass  # Ignore if unable to send message
+
+                # Delete the finished game
+                self.game_manager.delete_game(game_id)
+
+            else:
+                # Game continues
+                caption = f"{language_manager.get_message('move', user.id)}: {message_text}\n{language_manager.get_message('current_turn', user.id)}: {current_player}"
+
+                # Send to player who made the move
+                with open(png_file, "rb") as f:
+                    await update.message.reply_photo(photo=f, caption=caption, parse_mode="HTML")
+
+                # Clean up temp file
+                os.unlink(png_file)
+
+                # Get the other player ID
+                other_player_id = (
+                    game_info["player2_id"] if player_id == game_info["player1_id"] else game_info["player1_id"]
+                )
+
+                # Check if the other player is a computer
+                if other_player_id == COMPUTER_PLAYER:
+                    # It's the computer's turn, generate a move
+                    await self.make_computer_move(game_id, other_player_id, context, user)
+                else:
+                    # It's a human player's turn, notify them
+                    try:
+                        # Create another PNG for the opponent
+                        opponent_png_file = self.render_board(board, game_id)
+                        opponent_caption = f"{language_manager.get_message('opponent_played', other_player_id)} {update.effective_user.username} {message_text}\n\n{language_manager.get_message('your_turn_exclamation', other_player_id)}"
+
+                        with open(opponent_png_file, "rb") as f:
+                            await context.bot.send_photo(
+                                chat_id=other_player_id,
+                                photo=f,
+                                caption=opponent_caption,
+                                parse_mode="HTML",
+                            )
+
+                        # Clean up temp file
+                        os.unlink(opponent_png_file)
+
+                    except Exception:
+                        pass  # Ignore if unable to send message
+        else:
+            await update.message.reply_text(
+                f"{language_manager.get_message('invalid_move', user.id, user_language)} {result['error']}"
+            )
+
     async def join_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Join a game using an invite link."""
         user = update.effective_user
@@ -801,8 +1200,11 @@ class ChessBot:
         if game_id:
             # Set this as the active game for the player
             self.set_active_game(player_id, game_id)
-            # Get the initial board state
-            board = chess.Board()
+
+            # Get the game info to get the board state
+            game_info = self.game_manager.get_game(game_id)
+            board = chess.Board(game_info["fen"])
+
             svg_file = self.render_board(board)
 
             with open(svg_file, "rb") as f:
@@ -1113,10 +1515,14 @@ class ChessBot:
                 self.set_active_game(player_id, active_game_id)
             else:
                 # Determine how to send the reply based on update type
-                if hasattr(update, 'message') and update.message:
-                    await update.message.reply_text(language_manager.get_message("no_active_games", user.id, user_language))
-                elif hasattr(update, 'callback_query') and update.callback_query:
-                    await update.callback_query.message.reply_text(language_manager.get_message("no_active_games", user.id, user_language))
+                if hasattr(update, "message") and update.message:
+                    await update.message.reply_text(
+                        language_manager.get_message("no_active_games", user.id, user_language)
+                    )
+                elif hasattr(update, "callback_query") and update.callback_query:
+                    await update.callback_query.message.reply_text(
+                        language_manager.get_message("no_active_games", user.id, user_language)
+                    )
                 return
 
         # Get the active game details
@@ -1137,10 +1543,12 @@ class ChessBot:
 
         if not result:
             # This shouldn't happen, but just in case
-            if hasattr(update, 'message') and update.message:
+            if hasattr(update, "message") and update.message:
                 await update.message.reply_text(language_manager.get_message("no_active_games", user.id, user_language))
-            elif hasattr(update, 'callback_query') and update.callback_query:
-                await update.callback_query.message.reply_text(language_manager.get_message("no_active_games", user.id, user_language))
+            elif hasattr(update, "callback_query") and update.callback_query:
+                await update.callback_query.message.reply_text(
+                    language_manager.get_message("no_active_games", user.id, user_language)
+                )
             return
 
         game_id, player1_id, player2_id, created_at, current_turn, fen = result
@@ -1185,9 +1593,9 @@ class ChessBot:
         )
 
         # Determine how to send the reply based on update type
-        if hasattr(update, 'message') and update.message:
+        if hasattr(update, "message") and update.message:
             await update.message.reply_text(game_info_message, parse_mode="HTML")
-        elif hasattr(update, 'callback_query') and update.callback_query:
+        elif hasattr(update, "callback_query") and update.callback_query:
             await update.callback_query.message.reply_text(game_info_message, parse_mode="HTML")
 
     async def surrender_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1531,8 +1939,7 @@ class ChessBot:
 
             # Confirm to the user that the ping was sent (without motivational quote)
             await update.message.reply_text(
-                language_manager.get_message("ping_sent", user.id, user_language),
-                parse_mode="HTML"
+                language_manager.get_message("ping_sent", user.id, user_language), parse_mode="HTML"
             )
         except Exception as e:
             print(f"Could not send ping to opponent {opponent_id}: {e}")
@@ -1582,10 +1989,14 @@ class ChessBot:
                 self.set_active_game(player_id, active_game_id)
             else:
                 # Check if this is a callback query or a regular message
-                if hasattr(update, 'callback_query') and update.callback_query:
-                    await update.callback_query.message.reply_text(language_manager.get_message("no_active_board", user.id, user_language))
+                if hasattr(update, "callback_query") and update.callback_query:
+                    await update.callback_query.message.reply_text(
+                        language_manager.get_message("no_active_board", user.id, user_language)
+                    )
                 else:
-                    await update.message.reply_text(language_manager.get_message("no_active_board", user.id, user_language))
+                    await update.message.reply_text(
+                        language_manager.get_message("no_active_board", user.id, user_language)
+                    )
                 return
 
         # Get the active game details
@@ -1606,8 +2017,10 @@ class ChessBot:
 
         if not result:
             # Check if this is a callback query or a regular message
-            if hasattr(update, 'callback_query') and update.callback_query:
-                await update.callback_query.message.reply_text(language_manager.get_message("no_active_board", user.id, user_language))
+            if hasattr(update, "callback_query") and update.callback_query:
+                await update.callback_query.message.reply_text(
+                    language_manager.get_message("no_active_board", user.id, user_language)
+                )
             else:
                 await update.message.reply_text(language_manager.get_message("no_active_board", user.id, user_language))
             return
@@ -1623,7 +2036,7 @@ class ChessBot:
         # Send the board image
         with open(png_file, "rb") as f:
             # Check if this is a callback query or a regular message
-            if hasattr(update, 'callback_query') and update.callback_query:
+            if hasattr(update, "callback_query") and update.callback_query:
                 await update.callback_query.message.reply_photo(
                     photo=f,
                     caption=f"{language_manager.get_message('current_active_game', user.id, user_language)}: {game_id}",
@@ -2038,7 +2451,9 @@ class ChessBot:
                 caption = f"🏆 You win by checkmate!\nComputer played: {move_san}"
 
             # Send the final board to the player
-            human_player_id = game_info["player1_id"] if computer_id == game_info["player2_id"] else game_info["player2_id"]
+            human_player_id = (
+                game_info["player1_id"] if computer_id == game_info["player2_id"] else game_info["player2_id"]
+            )
             with open(png_file, "rb") as f:
                 await context.bot.send_photo(
                     chat_id=human_player_id,
@@ -2057,7 +2472,9 @@ class ChessBot:
             caption = f"Computer played: {move_san}\n\nYour turn!"
 
             # Send the updated board to the player
-            human_player_id = game_info["player1_id"] if computer_id == game_info["player2_id"] else game_info["player2_id"]
+            human_player_id = (
+                game_info["player1_id"] if computer_id == game_info["player2_id"] else game_info["player2_id"]
+            )
             with open(png_file, "rb") as f:
                 await context.bot.send_photo(
                     chat_id=human_player_id,
