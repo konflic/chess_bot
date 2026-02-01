@@ -95,7 +95,9 @@ class ChessGameManager:
         )
 
         # Check if ping_history table exists and needs migration
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ping_history'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ping_history'"
+        )
         table_exists = cursor.fetchone()
 
         if table_exists:
@@ -173,11 +175,17 @@ class ChessGameManager:
 
         # Migration 1: Add last_move_timestamp column if it doesn't exist
         if "last_move_timestamp" not in columns:
-            print("Applying migration: Adding last_move_timestamp column to games table...")
+            print(
+                "Applying migration: Adding last_move_timestamp column to games table..."
+            )
             try:
-                cursor.execute("ALTER TABLE games ADD COLUMN last_move_timestamp TIMESTAMP")
+                cursor.execute(
+                    "ALTER TABLE games ADD COLUMN last_move_timestamp TIMESTAMP"
+                )
                 # Update existing rows to have the created_at timestamp as the last_move_timestamp
-                cursor.execute("UPDATE games SET last_move_timestamp = created_at WHERE last_move_timestamp IS NULL")
+                cursor.execute(
+                    "UPDATE games SET last_move_timestamp = created_at WHERE last_move_timestamp IS NULL"
+                )
                 print("Migration completed successfully!")
             except sqlite3.OperationalError as e:
                 print(f"Migration failed: {e}")
@@ -216,7 +224,9 @@ class ChessGameManager:
                         player1_id,
                         invite_link,
                         "playing",
-                        custom_fen if custom_fen else "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                        custom_fen
+                        if custom_fen
+                        else "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
                     ),
                 )
             else:
@@ -231,7 +241,9 @@ class ChessGameManager:
                         player1_id,
                         player1_id,
                         invite_link,
-                        custom_fen if custom_fen else "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                        custom_fen
+                        if custom_fen
+                        else "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
                     ),
                 )
 
@@ -343,12 +355,20 @@ class ChessGameManager:
                 if board.is_checkmate():
                     game_status = "finished"
                     winner = player_id
-                elif board.is_stalemate() or board.is_insufficient_material() or board.can_claim_draw():
+                elif (
+                    board.is_stalemate()
+                    or board.is_insufficient_material()
+                    or board.can_claim_draw()
+                ):
                     game_status = "finished"
                     winner = "draw"
                 else:
                     # Switch turns
-                    next_player = game["player2_id"] if player_id == game["player1_id"] else game["player1_id"]
+                    next_player = (
+                        game["player2_id"]
+                        if player_id == game["player1_id"]
+                        else game["player1_id"]
+                    )
                     game_status = "playing"
                     winner = None
 
@@ -364,7 +384,11 @@ class ChessGameManager:
                 """,
                     (
                         board.fen(),
-                        (next_player if game_status == "playing" else game["current_turn"]),
+                        (
+                            next_player
+                            if game_status == "playing"
+                            else game["current_turn"]
+                        ),
                         game_status,
                         game_id,
                     ),
@@ -476,7 +500,9 @@ class ChessBot:
             token = f.read().strip()
 
         # Create application with post_init hook for setting up commands
-        self.application = Application.builder().token(token).post_init(self.post_init_tasks).build()
+        self.application = (
+            Application.builder().token(token).post_init(self.post_init_tasks).build()
+        )
         self.game_manager = ChessGameManager()
         self.setup_handlers()
 
@@ -507,7 +533,9 @@ class ChessBot:
             # Note: We can't determine the game_id from the current table structure
             # So we'll store it with a placeholder game_id for now
             # This will be updated when pings are sent
-            self.last_ping[("unknown", player_id)] = datetime.datetime.fromisoformat(last_ping_time)
+            self.last_ping[("unknown", player_id)] = datetime.datetime.fromisoformat(
+                last_ping_time
+            )
 
         conn.close()
 
@@ -554,7 +582,9 @@ class ChessBot:
         conn = sqlite3.connect(self.game_manager.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT active_game_id FROM active_games WHERE player_id = ?", (player_id,))
+        cursor.execute(
+            "SELECT active_game_id FROM active_games WHERE player_id = ?", (player_id,)
+        )
 
         result = cursor.fetchone()
         conn.close()
@@ -572,17 +602,27 @@ class ChessBot:
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("fengame", self.fen_game))
-        self.application.add_handler(CommandHandler("fengame_delete", self.fengame_delete))
+        self.application.add_handler(
+            CommandHandler("fengame_delete", self.fengame_delete)
+        )
         self.application.add_handler(CommandHandler("playvs", self.play_vs_computer))
         self.application.add_handler(CommandHandler("status", self.current_game))
-        self.application.add_handler(CommandHandler("active_games", self.active_games_command))
-        self.application.add_handler(CommandHandler("set_active", self.set_active_command))
+        self.application.add_handler(
+            CommandHandler("active_games", self.active_games_command)
+        )
+        self.application.add_handler(
+            CommandHandler("set_active", self.set_active_command)
+        )
         self.application.add_handler(CommandHandler("surrender", self.surrender_game))
-        self.application.add_handler(CommandHandler("confirm_surrender", self.confirm_surrender))
+        self.application.add_handler(
+            CommandHandler("confirm_surrender", self.confirm_surrender)
+        )
         self.application.add_handler(CommandHandler("cancel", self.cancel_surrender))
         self.application.add_handler(CommandHandler("ping", self.ping_opponent))
         self.application.add_handler(CommandHandler("board", self.show_board))
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move))
+        self.application.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move)
+        )
 
         # Add callback query handler for inline buttons
         from telegram.ext import CallbackQueryHandler
@@ -629,7 +669,9 @@ class ChessBot:
                 # Try to join the game
                 result = self.game_manager.join_game(invite_link, user.id)
                 game_id, opponent_id = (
-                    result if isinstance(result, tuple) and result[1] != "existing_game" else (None, None)
+                    result
+                    if isinstance(result, tuple) and result[1] != "existing_game"
+                    else (None, None)
                 )
 
                 if game_id:
@@ -641,7 +683,9 @@ class ChessBot:
                     color = (
                         language_manager.get_message("white", user.id, user_language)
                         if is_white
-                        else language_manager.get_message("black", user.id, user_language)
+                        else language_manager.get_message(
+                            "black", user.id, user_language
+                        )
                     )
 
                     with open("start.png", "rb") as f:
@@ -654,7 +698,9 @@ class ChessBot:
                                 + (
                                     language_manager.get_message("your_turn", user.id)
                                     if is_white
-                                    else language_manager.get_message("waiting_opponent", user.id)
+                                    else language_manager.get_message(
+                                        "waiting_opponent", user.id
+                                    )
                                 )
                             ),
                             parse_mode="HTML",
@@ -678,9 +724,13 @@ class ChessBot:
                                         f"{language_manager.get_message('game_id', opponent_id)}: `{game_id}`\n"
                                         f"{language_manager.get_message('you_are', opponent_id)} {opponent_color}\n\n"
                                         + (
-                                            language_manager.get_message("your_turn", opponent_id)
+                                            language_manager.get_message(
+                                                "your_turn", opponent_id
+                                            )
                                             if not is_white
-                                            else language_manager.get_message("waiting_opponent", opponent_id)
+                                            else language_manager.get_message(
+                                                "waiting_opponent", opponent_id
+                                            )
                                         )
                                     ),
                                     parse_mode="HTML",
@@ -870,7 +920,7 @@ class ChessBot:
         if color_preference not in ["white", "black"]:
             await update.message.reply_text(
                 "Invalid color preference. Please specify 'white' or 'black'.",
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
             return
 
@@ -880,7 +930,7 @@ class ChessBot:
         except ValueError as e:
             await update.message.reply_text(
                 f"Invalid FEN string: {str(e)}\n\nPlease provide a valid FEN string.",
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
             return
 
@@ -910,7 +960,11 @@ class ChessBot:
                 SET player1_id = NULL, player2_id = ?, current_turn = ?
                 WHERE game_id = ?
                 """,
-                (player_id, player_id if current_turn == "player2_id" else None, game_id),
+                (
+                    player_id,
+                    player_id if current_turn == "player2_id" else None,
+                    game_id,
+                ),
             )
 
             conn.commit()
@@ -997,7 +1051,7 @@ class ChessBot:
             await update.message.reply_text(
                 f"❌ Game not found or you don't have permission to delete it.\n\n"
                 f"You can only delete your own unused FEN games.",
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
             return
 
@@ -1008,7 +1062,7 @@ class ChessBot:
         await update.message.reply_text(
             f"✅ FEN game <code>{game_id}</code> has been deleted.\n\n"
             f"You can now create a new FEN game with /fengame command.",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1083,7 +1137,9 @@ class ChessBot:
                 self.set_active_game(player_id, active_game_id)
             else:
                 await update.message.reply_text(
-                    language_manager.get_message("not_in_active_game", user.id, user_language)
+                    language_manager.get_message(
+                        "not_in_active_game", user.id, user_language
+                    )
                 )
                 return
 
@@ -1101,7 +1157,11 @@ class ChessBot:
         conn.close()
 
         if not result:
-            await update.message.reply_text(language_manager.get_message("not_in_active_game", user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message(
+                    "not_in_active_game", user.id, user_language
+                )
+            )
             return
 
         game_id = active_game_id
@@ -1130,7 +1190,9 @@ class ChessBot:
             if result["status"] == "finished":
                 # Get opponent ID
                 opponent_id = (
-                    game_info["player2_id"] if player_id == game_info["player1_id"] else game_info["player1_id"]
+                    game_info["player2_id"]
+                    if player_id == game_info["player1_id"]
+                    else game_info["player1_id"]
                 )
 
                 if result["winner"] == "draw":
@@ -1144,7 +1206,9 @@ class ChessBot:
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
-                        await update.message.reply_photo(photo=f, caption=player_caption, parse_mode="HTML")
+                        await update.message.reply_photo(
+                            photo=f, caption=player_caption, parse_mode="HTML"
+                        )
 
                     # Clean up temp file
                     os.unlink(png_file)
@@ -1185,7 +1249,9 @@ class ChessBot:
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
-                        await update.message.reply_photo(photo=f, caption=player_caption, parse_mode="HTML")
+                        await update.message.reply_photo(
+                            photo=f, caption=player_caption, parse_mode="HTML"
+                        )
 
                     # Clean up temp file
                     os.unlink(png_file)
@@ -1214,20 +1280,26 @@ class ChessBot:
 
                 # Send to player who made the move
                 with open(png_file, "rb") as f:
-                    await update.message.reply_photo(photo=f, caption=caption, parse_mode="HTML")
+                    await update.message.reply_photo(
+                        photo=f, caption=caption, parse_mode="HTML"
+                    )
 
                 # Clean up temp file
                 os.unlink(png_file)
 
                 # Get the other player ID
                 other_player_id = (
-                    game_info["player2_id"] if player_id == game_info["player1_id"] else game_info["player1_id"]
+                    game_info["player2_id"]
+                    if player_id == game_info["player1_id"]
+                    else game_info["player1_id"]
                 )
 
                 # Check if the other player is a computer
                 if other_player_id == COMPUTER_PLAYER:
                     # It's the computer's turn, generate a move
-                    await self.make_computer_move(game_id, other_player_id, context, user)
+                    await self.make_computer_move(
+                        game_id, other_player_id, context, user
+                    )
                 else:
                     # It's a human player's turn, notify them
                     try:
@@ -1261,7 +1333,9 @@ class ChessBot:
 
         # Check if user provided an invite link
         if len(context.args) != 1:
-            await update.message.reply_text(language_manager.get_message("invalid_invite", user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message("invalid_invite", user.id, user_language)
+            )
             return
 
         invite_link = context.args[0]
@@ -1270,7 +1344,11 @@ class ChessBot:
 
         # Try to join the game
         result = self.game_manager.join_game(invite_link, player_id)
-        game_id, opponent_id = result if isinstance(result, tuple) and result[1] != "existing_game" else (None, None)
+        game_id, opponent_id = (
+            result
+            if isinstance(result, tuple) and result[1] != "existing_game"
+            else (None, None)
+        )
 
         if game_id:
             # Set this as the active game for the player
@@ -1312,7 +1390,11 @@ class ChessBot:
                     parse_mode="HTML",
                 )
             else:
-                await update.message.reply_text(language_manager.get_message("invalid_invite", user.id, user_language))
+                await update.message.reply_text(
+                    language_manager.get_message(
+                        "invalid_invite", user.id, user_language
+                    )
+                )
 
     async def handle_move(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle chess moves."""
@@ -1352,7 +1434,9 @@ class ChessBot:
                 self.set_active_game(player_id, active_game_id)
             else:
                 await update.message.reply_text(
-                    language_manager.get_message("not_in_active_game", user.id, user_language)
+                    language_manager.get_message(
+                        "not_in_active_game", user.id, user_language
+                    )
                 )
                 return
 
@@ -1370,7 +1454,11 @@ class ChessBot:
         conn.close()
 
         if not result:
-            await update.message.reply_text(language_manager.get_message("not_in_active_game", user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message(
+                    "not_in_active_game", user.id, user_language
+                )
+            )
             return
 
         game_id = active_game_id
@@ -1399,7 +1487,9 @@ class ChessBot:
             if result["status"] == "finished":
                 # Get opponent ID
                 opponent_id = (
-                    game_info["player2_id"] if player_id == game_info["player1_id"] else game_info["player1_id"]
+                    game_info["player2_id"]
+                    if player_id == game_info["player1_id"]
+                    else game_info["player1_id"]
                 )
 
                 if result["winner"] == "draw":
@@ -1413,7 +1503,9 @@ class ChessBot:
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
-                        await update.message.reply_photo(photo=f, caption=player_caption, parse_mode="HTML")
+                        await update.message.reply_photo(
+                            photo=f, caption=player_caption, parse_mode="HTML"
+                        )
 
                     # Clean up temp file
                     os.unlink(png_file)
@@ -1454,7 +1546,9 @@ class ChessBot:
 
                     # Send to player who made the move
                     with open(png_file, "rb") as f:
-                        await update.message.reply_photo(photo=f, caption=player_caption, parse_mode="HTML")
+                        await update.message.reply_photo(
+                            photo=f, caption=player_caption, parse_mode="HTML"
+                        )
 
                     # Clean up temp file
                     os.unlink(png_file)
@@ -1483,20 +1577,26 @@ class ChessBot:
 
                 # Send to player who made the move
                 with open(png_file, "rb") as f:
-                    await update.message.reply_photo(photo=f, caption=caption, parse_mode="HTML")
+                    await update.message.reply_photo(
+                        photo=f, caption=caption, parse_mode="HTML"
+                    )
 
                 # Clean up temp file
                 os.unlink(png_file)
 
                 # Get the other player ID
                 other_player_id = (
-                    game_info["player2_id"] if player_id == game_info["player1_id"] else game_info["player1_id"]
+                    game_info["player2_id"]
+                    if player_id == game_info["player1_id"]
+                    else game_info["player1_id"]
                 )
 
                 # Check if the other player is a computer
                 if other_player_id == COMPUTER_PLAYER:
                     # It's the computer's turn, generate a move
-                    await self.make_computer_move(game_id, other_player_id, context, user)
+                    await self.make_computer_move(
+                        game_id, other_player_id, context, user
+                    )
                 else:
                     # It's a human player's turn, notify them
                     try:
@@ -1592,11 +1692,15 @@ class ChessBot:
                 # Determine how to send the reply based on update type
                 if hasattr(update, "message") and update.message:
                     await update.message.reply_text(
-                        language_manager.get_message("no_active_games", user.id, user_language)
+                        language_manager.get_message(
+                            "no_active_games", user.id, user_language
+                        )
                     )
                 elif hasattr(update, "callback_query") and update.callback_query:
                     await update.callback_query.message.reply_text(
-                        language_manager.get_message("no_active_games", user.id, user_language)
+                        language_manager.get_message(
+                            "no_active_games", user.id, user_language
+                        )
                     )
                 return
 
@@ -1619,10 +1723,16 @@ class ChessBot:
         if not result:
             # This shouldn't happen, but just in case
             if hasattr(update, "message") and update.message:
-                await update.message.reply_text(language_manager.get_message("no_active_games", user.id, user_language))
+                await update.message.reply_text(
+                    language_manager.get_message(
+                        "no_active_games", user.id, user_language
+                    )
+                )
             elif hasattr(update, "callback_query") and update.callback_query:
                 await update.callback_query.message.reply_text(
-                    language_manager.get_message("no_active_games", user.id, user_language)
+                    language_manager.get_message(
+                        "no_active_games", user.id, user_language
+                    )
                 )
             return
 
@@ -1671,7 +1781,9 @@ class ChessBot:
         if hasattr(update, "message") and update.message:
             await update.message.reply_text(game_info_message, parse_mode="HTML")
         elif hasattr(update, "callback_query") and update.callback_query:
-            await update.callback_query.message.reply_text(game_info_message, parse_mode="HTML")
+            await update.callback_query.message.reply_text(
+                game_info_message, parse_mode="HTML"
+            )
 
     async def surrender_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Ask for confirmation before surrendering the game."""
@@ -1714,9 +1826,7 @@ class ChessBot:
                 self.set_active_game(player_id, active_game_id)
             else:
                 # User has multiple games, show them a selection menu
-                response = (
-                    f"<b>{language_manager.get_message('select_game_to_surrender', user.id, user_language)}</b>\n\n"
-                )
+                response = f"<b>{language_manager.get_message('select_game_to_surrender', user.id, user_language)}</b>\n\n"
 
                 # Create inline keyboard with buttons for each game
                 keyboard = []
@@ -1749,7 +1859,9 @@ class ChessBot:
                     )
 
                     # Format game details
-                    game_details = language_manager.get_message("game_details", user.id) % (
+                    game_details = language_manager.get_message(
+                        "game_details", user.id
+                    ) % (
                         game_id,
                         opponent_name,
                         player_color,
@@ -1760,13 +1872,21 @@ class ChessBot:
 
                     # Create a button for this game
                     button_text = f"{language_manager.get_message('surrender_game', user.id)}: {game_id}"
-                    keyboard.append([InlineKeyboardButton(button_text, callback_data=f"surrender:{game_id}")])
+                    keyboard.append(
+                        [
+                            InlineKeyboardButton(
+                                button_text, callback_data=f"surrender:{game_id}"
+                            )
+                        ]
+                    )
 
                 # Create the inline keyboard markup with one-time keyboard
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
                 # Send the message with the inline keyboard
-                await update.message.reply_text(response, parse_mode="HTML", reply_markup=reply_markup)
+                await update.message.reply_text(
+                    response, parse_mode="HTML", reply_markup=reply_markup
+                )
                 return
 
         # Verify the game exists
@@ -1802,7 +1922,9 @@ class ChessBot:
             parse_mode="HTML",
         )
 
-    async def confirm_surrender(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def confirm_surrender(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
         """Confirm surrender and end the game."""
         user = update.effective_user
         player_id = user.id
@@ -1878,7 +2000,9 @@ class ChessBot:
 
         conn.close()
 
-    async def cancel_surrender(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def cancel_surrender(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
         """Cancel the surrender confirmation."""
         user = update.effective_user
         user_language = user.language_code
@@ -1933,7 +2057,9 @@ class ChessBot:
                 active_game_id = result[0]
                 self.set_active_game(player_id, active_game_id)
             else:
-                await update.message.reply_text(language_manager.get_message("ping_no_game", user.id, user_language))
+                await update.message.reply_text(
+                    language_manager.get_message("ping_no_game", user.id, user_language)
+                )
                 return
 
         # Get the active game details
@@ -1953,7 +2079,9 @@ class ChessBot:
         conn.close()
 
         if not result:
-            await update.message.reply_text(language_manager.get_message("ping_no_game", user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message("ping_no_game", user.id, user_language)
+            )
             return
 
         game_id, player1_id, player2_id, current_turn = result
@@ -1964,7 +2092,9 @@ class ChessBot:
         # Check if it's the opponent's turn (not the user's turn)
         if current_turn == player_id:
             await update.message.reply_text(
-                language_manager.get_message("ping_not_opponent_turn", user.id, user_language)
+                language_manager.get_message(
+                    "ping_not_opponent_turn", user.id, user_language
+                )
             )
             return
 
@@ -1975,7 +2105,11 @@ class ChessBot:
         if ping_key in self.last_ping:
             time_since_last_ping = now - self.last_ping[ping_key]
             if time_since_last_ping.total_seconds() < 1800:  # 30 minutes = 1800 seconds
-                await update.message.reply_text(language_manager.get_message("ping_cooldown", user.id, user_language))
+                await update.message.reply_text(
+                    language_manager.get_message(
+                        "ping_cooldown", user.id, user_language
+                    )
+                )
                 return
 
         # Update the last ping time in memory for this specific game
@@ -2014,7 +2148,8 @@ class ChessBot:
 
             # Confirm to the user that the ping was sent (without motivational quote)
             await update.message.reply_text(
-                language_manager.get_message("ping_sent", user.id, user_language), parse_mode="HTML"
+                language_manager.get_message("ping_sent", user.id, user_language),
+                parse_mode="HTML",
             )
         except Exception as e:
             print(f"Could not send ping to opponent {opponent_id}: {e}")
@@ -2026,7 +2161,10 @@ class ChessBot:
                 # Also remove from database
                 conn = sqlite3.connect(self.game_manager.db_path)
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM ping_history WHERE game_id = ? AND player_id = ?", (game_id, player_id))
+                cursor.execute(
+                    "DELETE FROM ping_history WHERE game_id = ? AND player_id = ?",
+                    (game_id, player_id),
+                )
                 conn.commit()
                 conn.close()
 
@@ -2066,11 +2204,15 @@ class ChessBot:
                 # Check if this is a callback query or a regular message
                 if hasattr(update, "callback_query") and update.callback_query:
                     await update.callback_query.message.reply_text(
-                        language_manager.get_message("no_active_board", user.id, user_language)
+                        language_manager.get_message(
+                            "no_active_board", user.id, user_language
+                        )
                     )
                 else:
                     await update.message.reply_text(
-                        language_manager.get_message("no_active_board", user.id, user_language)
+                        language_manager.get_message(
+                            "no_active_board", user.id, user_language
+                        )
                     )
                 return
 
@@ -2094,10 +2236,16 @@ class ChessBot:
             # Check if this is a callback query or a regular message
             if hasattr(update, "callback_query") and update.callback_query:
                 await update.callback_query.message.reply_text(
-                    language_manager.get_message("no_active_board", user.id, user_language)
+                    language_manager.get_message(
+                        "no_active_board", user.id, user_language
+                    )
                 )
             else:
-                await update.message.reply_text(language_manager.get_message("no_active_board", user.id, user_language))
+                await update.message.reply_text(
+                    language_manager.get_message(
+                        "no_active_board", user.id, user_language
+                    )
+                )
             return
 
         game_id, fen = result
@@ -2127,7 +2275,9 @@ class ChessBot:
         # Clean up temp file
         os.unlink(png_file)
 
-    async def active_games_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def active_games_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
         """Show all active games for the user."""
         user = update.effective_user
         player_id = user.id
@@ -2151,7 +2301,9 @@ class ChessBot:
         conn.close()
 
         if not games:
-            await update.message.reply_text(language_manager.get_message("no_active_games", user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message("no_active_games", user.id, user_language)
+            )
             return
 
         # Get the current active game
@@ -2209,16 +2361,28 @@ class ChessBot:
             response += f"{active_marker}{game_details}\n\n"
 
             # Create a button for this game
-            button_text = f"{language_manager.get_message('set_active_game', user.id)}: {game_id}"
-            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"set_active:{game_id}")])
+            button_text = (
+                f"{language_manager.get_message('set_active_game', user.id)}: {game_id}"
+            )
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        button_text, callback_data=f"set_active:{game_id}"
+                    )
+                ]
+            )
 
         # Create the inline keyboard markup with one-time keyboard
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Send the message with the inline keyboard
-        await update.message.reply_text(response, parse_mode="HTML", reply_markup=reply_markup)
+        await update.message.reply_text(
+            response, parse_mode="HTML", reply_markup=reply_markup
+        )
 
-    async def set_active_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def set_active_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
         """Set a game as the active game."""
         user = update.effective_user
         player_id = user.id
@@ -2226,7 +2390,9 @@ class ChessBot:
 
         # Check if user provided a game ID
         if len(context.args) != 1:
-            await update.message.reply_text(language_manager.get_message("no_active_games", user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message("no_active_games", user.id, user_language)
+            )
             return
 
         game_id = context.args[0]
@@ -2248,7 +2414,9 @@ class ChessBot:
         conn.close()
 
         if not result:
-            await update.message.reply_text(language_manager.get_message("no_active_games", user.id, user_language))
+            await update.message.reply_text(
+                language_manager.get_message("no_active_games", user.id, user_language)
+            )
             return
 
         fen = result[0]
@@ -2258,7 +2426,8 @@ class ChessBot:
 
         # Notify the user
         await update.message.reply_text(
-            language_manager.get_message("game_set_active", user.id, user_language) % game_id,
+            language_manager.get_message("game_set_active", user.id, user_language)
+            % game_id,
             parse_mode="HTML",
         )
 
@@ -2311,7 +2480,9 @@ class ChessBot:
 
             if not result:
                 await query.edit_message_text(
-                    language_manager.get_message("no_active_games", user.id, user_language),
+                    language_manager.get_message(
+                        "no_active_games", user.id, user_language
+                    ),
                     parse_mode="HTML",
                 )
                 return
@@ -2321,7 +2492,8 @@ class ChessBot:
 
             # Notify the user and remove the inline keyboard
             await query.edit_message_text(
-                language_manager.get_message("game_set_active", user.id, user_language) % game_id,
+                language_manager.get_message("game_set_active", user.id, user_language)
+                % game_id,
                 parse_mode="HTML",
                 reply_markup=None,  # Remove the inline keyboard
             )
@@ -2366,7 +2538,9 @@ class ChessBot:
 
             # Ask for confirmation and remove the inline keyboard
             await query.edit_message_text(
-                language_manager.get_message("confirm_surrender", user.id, user_language),
+                language_manager.get_message(
+                    "confirm_surrender", user.id, user_language
+                ),
                 parse_mode="HTML",
                 reply_markup=None,  # Remove the inline keyboard
             )
@@ -2376,7 +2550,9 @@ class ChessBot:
             # Call the play_vs_computer method to handle the game creation with random color
             await self.play_vs_computer(update, context)
 
-    async def play_vs_computer(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def play_vs_computer(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
         """Start a new game against the computer."""
         user = update.effective_user
         player_id = user.id
@@ -2395,7 +2571,14 @@ class ChessBot:
             ORDER BY created_at DESC
             LIMIT 1
         """,
-            (player_id, player_id, player_id, COMPUTER_PLAYER, COMPUTER_PLAYER, player_id),
+            (
+                player_id,
+                player_id,
+                player_id,
+                COMPUTER_PLAYER,
+                COMPUTER_PLAYER,
+                player_id,
+            ),
         )
 
         existing_computer_game = cursor.fetchone()
@@ -2421,7 +2604,9 @@ class ChessBot:
 
         # Generate game ID and invite link
         game_id = "".join(random.choices(string.ascii_letters + string.digits, k=10))
-        invite_link = "".join(random.choices(string.ascii_letters + string.digits, k=12))
+        invite_link = "".join(
+            random.choices(string.ascii_letters + string.digits, k=12)
+        )
 
         try:
             if player_is_white:
@@ -2431,7 +2616,14 @@ class ChessBot:
                     INSERT INTO games (game_id, player1_id, player2_id, current_turn, invite_link, status)
                     VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (game_id, player_id, COMPUTER_PLAYER, player_id, invite_link, "playing"),
+                    (
+                        game_id,
+                        player_id,
+                        COMPUTER_PLAYER,
+                        player_id,
+                        invite_link,
+                        "playing",
+                    ),
                 )
             else:
                 # Player is black, computer is white
@@ -2440,7 +2632,14 @@ class ChessBot:
                     INSERT INTO games (game_id, player1_id, player2_id, current_turn, invite_link, status)
                     VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (game_id, COMPUTER_PLAYER, player_id, COMPUTER_PLAYER, invite_link, "playing"),
+                    (
+                        game_id,
+                        COMPUTER_PLAYER,
+                        player_id,
+                        COMPUTER_PLAYER,
+                        invite_link,
+                        "playing",
+                    ),
                 )
 
             conn.commit()
@@ -2527,7 +2726,9 @@ class ChessBot:
 
             # Send the final board to the player
             human_player_id = (
-                game_info["player1_id"] if computer_id == game_info["player2_id"] else game_info["player2_id"]
+                game_info["player1_id"]
+                if computer_id == game_info["player2_id"]
+                else game_info["player2_id"]
             )
             with open(png_file, "rb") as f:
                 await context.bot.send_photo(
@@ -2548,7 +2749,9 @@ class ChessBot:
 
             # Send the updated board to the player
             human_player_id = (
-                game_info["player1_id"] if computer_id == game_info["player2_id"] else game_info["player2_id"]
+                game_info["player1_id"]
+                if computer_id == game_info["player2_id"]
+                else game_info["player2_id"]
             )
             with open(png_file, "rb") as f:
                 await context.bot.send_photo(
