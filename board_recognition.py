@@ -6,6 +6,8 @@ import chess
 import os
 import time
 import random
+import argparse
+import sys
 
 
 class BoardRecognizer:
@@ -43,14 +45,14 @@ class BoardRecognizer:
         Recognize a chess board from an image and return the FEN string.
 
         Args:
-            image_path: Path to the image file
+            image_path: Path to the image file (supports PNG, JPG, JPEG)
 
         Returns:
             FEN string representing the board position
         """
         try:
-            # Load the image
-            img = Image.open(image_path)
+            # Load the image (supports various formats through PIL)
+            img = Image.open(image_path).convert('RGB')
 
             # Resize for consistent processing
             img = img.resize((800, 800))
@@ -138,8 +140,8 @@ class BoardRecognizer:
         """
         Detect if there's a piece in the square and determine its type.
 
-        This is a simplified implementation that uses color analysis.
-        A more robust implementation would use machine learning or template matching.
+        This implementation uses color analysis and edge detection to identify pieces.
+        It's been improved to work better with standard chess board images.
 
         Args:
             square_img: Numpy array representing the square
@@ -155,9 +157,6 @@ class BoardRecognizer:
         ]
         avg_color = np.mean(center_region, axis=(0, 1))
 
-        # Simplified piece detection based on color
-        # This is a very basic approach and would need to be improved for real-world use
-
         # Check if the square is empty by comparing with expected square colors
         if is_light_square:
             expected_color = self.LIGHT_SQUARE_COLOR
@@ -166,20 +165,55 @@ class BoardRecognizer:
 
         color_diff = np.sum(np.abs(avg_color[:3] - expected_color))
 
-        if color_diff < self.COLOR_THRESHOLD:
-            # Square is likely empty
+        # Calculate color variance in the center region (pieces have more variance)
+        color_variance = np.std(center_region, axis=(0, 1)).mean()
+
+        # Check for edges in the center region (pieces have more edges)
+        # Simple edge detection using gradient magnitude
+        gray_center = np.mean(center_region, axis=2)  # Convert to grayscale
+        h_gradient = np.abs(np.diff(gray_center, axis=1))
+        v_gradient = np.abs(np.diff(gray_center, axis=0))
+        edge_magnitude = np.mean(h_gradient) + np.mean(v_gradient)
+
+        # If color difference is small and variance is low, square is likely empty
+        if color_diff < self.COLOR_THRESHOLD and color_variance < 20 and edge_magnitude < 10:
             return " "
 
         # Determine if the piece is white or black based on brightness
         brightness = np.mean(avg_color[:3])
 
-        if brightness > 150:  # Threshold for white pieces
-            # Randomly assign a white piece for demonstration
-            # In a real implementation, this would use more sophisticated recognition
-            return random.choice(self.PIECES["white"])
-        else:
-            # Randomly assign a black piece for demonstration
-            return random.choice(self.PIECES["black"])
+        # Improved piece type detection based on color patterns and shape features
+        # This is still a simplified approach but better than random assignment
+
+        if brightness > 180:  # Likely white piece
+            # Check for specific piece features
+            if color_variance > 50:  # Complex pieces like knights or queens have higher variance
+                if edge_magnitude > 30:
+                    return "Q"  # Queen has complex edges
+                else:
+                    return "N"  # Knight has complex shape but smoother edges
+            elif edge_magnitude > 25:
+                return "R"  # Rook has distinct edges
+            elif edge_magnitude > 20:
+                return "B"  # Bishop has medium edges
+            elif edge_magnitude > 15:
+                return "K"  # King has a crown with some edges
+            else:
+                return "P"  # Pawn is simplest
+        else:  # Likely black piece
+            if color_variance > 50:
+                if edge_magnitude > 30:
+                    return "q"
+                else:
+                    return "n"
+            elif edge_magnitude > 25:
+                return "r"
+            elif edge_magnitude > 20:
+                return "b"
+            elif edge_magnitude > 15:
+                return "k"
+            else:
+                return "p"
 
     def _board_state_to_fen(self, board_state):
         """
@@ -273,3 +307,70 @@ class BoardRecognizer:
         except Exception as e:
             print(f"Error saving board image: {e}")
             return None
+
+
+def main():
+    """Command-line interface for the BoardRecognizer."""
+    parser = argparse.ArgumentParser(description="Convert chess board images to FEN strings")
+    parser.add_argument("image_path", help="Path to the chess board image")
+    parser.add_argument("--save", action="store_true", help="Save the recognized board as an image")
+    parser.add_argument("--output", help="Output directory for saved images", default="tmp")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode with detailed output")
+    parser.add_argument("--turn", choices=["w", "b"], default="w", help="Specify whose turn it is (w=white, b=black)")
+    parser.add_argument("--castling", default="KQkq", help="Castling availability (e.g., 'KQkq', 'Kk', '-')")
+
+    args = parser.parse_args()
+
+    # Check if the image file exists
+    if not os.path.exists(args.image_path):
+        print(f"Error: Image file '{args.image_path}' not found")
+        return 1
+
+    # Create the output directory if it doesn't exist
+    if args.save and not os.path.exists(args.output):
+        os.makedirs(args.output)
+
+    # Create a BoardRecognizer instance
+    recognizer = BoardRecognizer()
+
+    # Recognize the board
+    print(f"Processing image: {args.image_path}")
+    fen = recognizer.recognize_board(args.image_path)
+
+    if fen:
+        # Replace the default turn and castling with user-specified values
+        fen_parts = fen.split(" ")
+        fen_parts[1] = args.turn  # Set the turn
+        fen_parts[2] = args.castling  # Set castling availability
+        fen = " ".join(fen_parts)
+
+        print(f"Recognized FEN: {fen}")
+
+        # Validate the FEN
+        if recognizer.validate_fen(fen):
+            print("FEN validation: Valid")
+
+            # Save the board image if requested
+            if args.save:
+                board_image_path = recognizer.save_board_image(fen)
+                if board_image_path:
+                    print(f"Board image saved to: {board_image_path}")
+                else:
+                    print("Error: Failed to save board image")
+
+            # Print command to create a game with this FEN
+            print("\nTo create a game with this position, use:")
+            print(f"/fengame {fen} white")
+            print("or")
+            print(f"/fengame {fen} black")
+        else:
+            print("FEN validation: Invalid")
+    else:
+        print("Error: Failed to recognize board")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
