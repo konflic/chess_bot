@@ -572,6 +572,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
         self.application.add_handler(CommandHandler("fengame", self.fen_game))
+        self.application.add_handler(CommandHandler("fengame_delete", self.fengame_delete))
         self.application.add_handler(CommandHandler("playvs", self.play_vs_computer))
         self.application.add_handler(CommandHandler("status", self.current_game))
         self.application.add_handler(CommandHandler("active_games", self.active_games_command))
@@ -595,6 +596,7 @@ class ChessBot:
             BotCommand("help", "Show all available commands"),
             BotCommand("newgame", "Create a new chess game"),
             BotCommand("fengame", "Create a game from a FEN string"),
+            BotCommand("fengame_delete", "Delete a FEN game by ID"),
             BotCommand("playvs", "Play against computer"),
             BotCommand("status", "Show your current active game"),
             BotCommand("active_games", "List all your active games"),
@@ -815,9 +817,48 @@ class ChessBot:
                 "- FEN: The FEN string representing the board position\n"
                 "- color: 'white' or 'black' - which color you want to play as\n\n"
                 "Example:\n"
-                "/fengame rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1 white"
+                "/fengame rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1 white\n\n"
+                "Note: You can only have one unused FEN game invite at a time.\n"
+                "To delete an existing FEN game, use /fengame_delete [game_id]"
             )
             await update.message.reply_text(instructions, parse_mode="HTML")
+            return
+
+        # Check if user already has an unused FEN game invite
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT game_id, invite_link FROM games
+            WHERE player1_id = ? AND player2_id IS NULL AND status = 'waiting'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (player_id,),
+        )
+
+        existing_game = cursor.fetchone()
+        conn.close()
+
+        if existing_game:
+            # User already has a waiting game, return the existing link
+            game_id, invite_link = existing_game
+
+            # Set this as the active game for the player
+            self.set_active_game(player_id, game_id)
+
+            deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
+
+            invite_message = (
+                f"<b>You already have an unused FEN game invite:</b>\n\n"
+                f"<b>Game ID:</b> <code>{game_id}</code>\n"
+                f"<b>Invite code:</b> <code>{invite_link}</code>\n\n"
+                f"<b>Share this link to invite a friend:</b>\n{deep_link}\n\n"
+                f"To delete this game and create a new one, use:\n"
+                f"<code>/fengame_delete {game_id}</code>"
+            )
+            await update.message.reply_text(invite_message, parse_mode="HTML")
             return
 
         # Extract FEN string and color preference
@@ -901,6 +942,74 @@ class ChessBot:
 
         # Clean up
         os.unlink(png_file)
+
+    async def fengame_delete(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Delete a FEN game by ID."""
+        user = update.effective_user
+        player_id = user.id
+        user_language = user.language_code
+
+        # Check if game ID is provided
+        if not context.args or len(context.args) != 1:
+            # No game ID provided, show instructions
+            instructions = (
+                "<b>Delete a FEN game by ID</b>\n\n"
+                "Usage: /fengame_delete [game_id]\n\n"
+                "Parameters:\n"
+                "- game_id: The ID of the FEN game to delete\n\n"
+                "Example:\n"
+                "/fengame_delete AbCdEfGhIj"
+            )
+            await update.message.reply_text(instructions, parse_mode="HTML")
+            return
+
+        game_id = context.args[0]
+
+        # Check if the game exists and belongs to the user
+        conn = sqlite3.connect(self.game_manager.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT game_id FROM games
+            WHERE game_id = ? AND player1_id = ? AND player2_id IS NULL AND status = 'waiting'
+            """,
+            (game_id, player_id),
+        )
+
+        result = cursor.fetchone()
+
+        if not result:
+            # Also check if the user is player2 (for black color preference games)
+            cursor.execute(
+                """
+                SELECT game_id FROM games
+                WHERE game_id = ? AND player2_id = ? AND player1_id IS NULL AND status = 'waiting'
+                """,
+                (game_id, player_id),
+            )
+
+            result = cursor.fetchone()
+
+        conn.close()
+
+        if not result:
+            await update.message.reply_text(
+                f"❌ Game not found or you don't have permission to delete it.\n\n"
+                f"You can only delete your own unused FEN games.",
+                parse_mode="HTML"
+            )
+            return
+
+        # Delete the game
+        self.game_manager.delete_game(game_id)
+
+        # Notify the user
+        await update.message.reply_text(
+            f"✅ FEN game <code>{game_id}</code> has been deleted.\n\n"
+            f"You can now create a new FEN game with /fengame command.",
+            parse_mode="HTML"
+        )
 
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle photo uploads for custom game creation."""
