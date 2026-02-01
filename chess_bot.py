@@ -20,7 +20,6 @@ import time
 
 from configuration import BOT_NAME, BOT_VERSION, GAMES_DB, language_manager
 from motivational_quotes import get_motivational_quote
-from board_recognition import BoardRecognizer
 import datetime
 
 # Computer player ID
@@ -572,7 +571,7 @@ class ChessBot:
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("newgame", self.new_game))
-        self.application.add_handler(CommandHandler("customgame", self.custom_game))
+        self.application.add_handler(CommandHandler("fengame", self.fen_game))
         self.application.add_handler(CommandHandler("playvs", self.play_vs_computer))
         self.application.add_handler(CommandHandler("status", self.current_game))
         self.application.add_handler(CommandHandler("active_games", self.active_games_command))
@@ -583,9 +582,6 @@ class ChessBot:
         self.application.add_handler(CommandHandler("ping", self.ping_opponent))
         self.application.add_handler(CommandHandler("board", self.show_board))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_move))
-
-        # Add handler for photos (for custom game from PNG)
-        self.application.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
 
         # Add callback query handler for inline buttons
         from telegram.ext import CallbackQueryHandler
@@ -598,7 +594,7 @@ class ChessBot:
             BotCommand("start", "Start bot and see main menu"),
             BotCommand("help", "Show all available commands"),
             BotCommand("newgame", "Create a new chess game"),
-            # BotCommand("customgame", "Create a game from a custom board position"),
+            BotCommand("fengame", "Create a game from a FEN string"),
             BotCommand("playvs", "Play against computer"),
             BotCommand("status", "Show your current active game"),
             BotCommand("active_games", "List all your active games"),
@@ -803,24 +799,108 @@ class ChessBot:
             )
             await update.message.reply_text(invite_message, parse_mode="HTML")
 
-    async def custom_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Start a new game with a custom board position."""
+    async def fen_game(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Create a new game from a FEN string."""
         user = update.effective_user
+        player_id = user.id
         user_language = user.language_code
 
-        # Store in user_data that we're waiting for a photo
-        context.user_data["awaiting_custom_board"] = True
+        # Check if FEN string is provided
+        if not context.args or len(context.args) < 2:
+            # No FEN string provided, show instructions
+            instructions = (
+                "<b>Create a game from a FEN string</b>\n\n"
+                "Usage: /fengame [FEN] [color]\n\n"
+                "Parameters:\n"
+                "- FEN: The FEN string representing the board position\n"
+                "- color: 'white' or 'black' - which color you want to play as\n\n"
+                "Example:\n"
+                "/fengame rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1 white"
+            )
+            await update.message.reply_text(instructions, parse_mode="HTML")
+            return
 
-        instructions = (
-            f"<b>{language_manager.get_message('custom_game_title', user.id, user_language)}</b>\n\n"
-            f"{language_manager.get_message('custom_game_instructions', user.id, user_language)}\n\n"
-            f"{language_manager.get_message('custom_game_step1', user.id, user_language)}\n"
-            f"{language_manager.get_message('custom_game_step2', user.id, user_language)}\n"
-            f"{language_manager.get_message('custom_game_step3', user.id, user_language)}\n\n"
-            f"{language_manager.get_message('custom_game_example', user.id, user_language)}"
-        )
+        # Extract FEN string and color preference
+        color_preference = context.args[-1].lower()
+        fen_parts = context.args[:-1]
+        fen_string = " ".join(fen_parts)
 
-        await update.message.reply_text(instructions, parse_mode="HTML")
+        # Validate color preference
+        if color_preference not in ["white", "black"]:
+            await update.message.reply_text(
+                "Invalid color preference. Please specify 'white' or 'black'.",
+                parse_mode="HTML"
+            )
+            return
+
+        # Validate FEN string
+        try:
+            board = chess.Board(fen_string)
+        except ValueError as e:
+            await update.message.reply_text(
+                f"Invalid FEN string: {str(e)}\n\nPlease provide a valid FEN string.",
+                parse_mode="HTML"
+            )
+            return
+
+        # Create a game with the custom position
+        if color_preference == "white":
+            # Player is white
+            game_id, invite_link = self.game_manager.create_game(
+                player_id, computer_opponent=False, custom_fen=fen_string
+            )
+        else:
+            # Player is black, create a game where player2 will be the creator
+            # We'll create a temporary game and then update it
+            game_id, invite_link = self.game_manager.create_game(
+                player_id, computer_opponent=False, custom_fen=fen_string
+            )
+
+            # Update the game to swap player positions
+            conn = sqlite3.connect(self.game_manager.db_path)
+            cursor = conn.cursor()
+
+            # Get the current turn from the FEN
+            current_turn = "player1_id" if board.turn else "player2_id"
+
+            cursor.execute(
+                """
+                UPDATE games
+                SET player1_id = NULL, player2_id = ?, current_turn = ?
+                WHERE game_id = ?
+                """,
+                (player_id, player_id if current_turn == "player2_id" else None, game_id),
+            )
+
+            conn.commit()
+            conn.close()
+
+        # Set this as the active game for the player
+        self.set_active_game(player_id, game_id)
+
+        # Generate a deep link for the invite
+        deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
+
+        # Render the board image
+        png_file = self.render_board(board, game_id)
+
+        # Send the game information
+        with open(png_file, "rb") as f:
+            await update.message.reply_photo(
+                photo=f,
+                caption=(
+                    f"<b>Custom game created from FEN!</b>\n\n"
+                    f"<b>Game ID:</b> <code>{game_id}</code>\n"
+                    f"<b>Invite code:</b> <code>{invite_link}</code>\n\n"
+                    f"<b>Share this link to invite a friend:</b>\n{deep_link}\n\n"
+                    f"You are playing as {color_preference}. "
+                    f"{'Your turn!' if (color_preference == 'white' and board.turn) or (color_preference == 'black' and not board.turn) else 'Waiting for opponent to move.'}"
+                ),
+                parse_mode="HTML",
+            )
+
+        # Clean up
+        os.unlink(png_file)
 
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle photo uploads for custom game creation."""
@@ -855,127 +935,13 @@ class ChessBot:
         )
 
     async def handle_move(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle chess moves and custom game setup messages."""
+        """Handle chess moves."""
         user = update.effective_user
         player_id = user.id
         user_language = user.language_code
         message_text = update.message.text.strip().lower()
 
-        # Check if we're waiting for turn information for a custom game
-        if context.user_data.get("awaiting_turn_info", False) and context.user_data.get("custom_board_photo"):
-            # Parse the turn information
-            # Expected format: "[color] turn, I play as [color]"
-            turn_color = None
-            player_color = None
-
-            if "white turn" in message_text:
-                turn_color = "white"
-            elif "black turn" in message_text:
-                turn_color = "black"
-
-            if "play as white" in message_text:
-                player_color = "white"
-            elif "play as black" in message_text:
-                player_color = "black"
-
-            if not turn_color or not player_color:
-                await update.message.reply_text(
-                    f"{language_manager.get_message('custom_game_parse_error', user.id, user_language)}\n\n"
-                    f"{language_manager.get_message('custom_game_example', user.id, user_language)}"
-                )
-                return
-
-            # Process the custom board image
-            photo_path = context.user_data["custom_board_photo"]
-
-            # For now, we'll use a standard starting position
-            # In a real implementation, this would analyze the image
-            board = BoardRecognizer.process_image(photo_path)
-
-            if not board:
-                await update.message.reply_text(
-                    language_manager.get_message("custom_game_recognition_error", user.id, user_language)
-                )
-                return
-
-            # Set the turn in the board
-            board = BoardRecognizer.set_turn(board, turn_color)
-
-            # Get the FEN string
-            custom_fen = board.fen()
-
-            # Create a game with the custom position
-            if player_color == "white":
-                # Player is white
-                game_id, invite_link = self.game_manager.create_game(
-                    player_id, computer_opponent=False, custom_fen=custom_fen
-                )
-            else:
-                # Player is black, create a game where player2 will be the creator
-                # We'll create a temporary game and then update it
-                game_id, invite_link = self.game_manager.create_game(
-                    player_id, computer_opponent=False, custom_fen=custom_fen
-                )
-
-                # Update the game to swap player positions
-                conn = sqlite3.connect(self.game_manager.db_path)
-                cursor = conn.cursor()
-
-                # Get the current turn from the FEN
-                current_turn = "player1_id" if turn_color == "white" else "player2_id"
-
-                cursor.execute(
-                    """
-                    UPDATE games
-                    SET player1_id = NULL, player2_id = ?, current_turn = ?
-                    WHERE game_id = ?
-                    """,
-                    (player_id, player_id if current_turn == "player2_id" else None, game_id),
-                )
-
-                conn.commit()
-                conn.close()
-
-            # Set this as the active game for the player
-            self.set_active_game(player_id, game_id)
-
-            # Generate a deep link for the invite
-            deep_link = f"https://t.me/{BOT_NAME}?start=join_{invite_link}"
-
-            # Render the board image
-            png_file = self.render_board(board, game_id)
-
-            # Send the game information
-            with open(png_file, "rb") as f:
-                await update.message.reply_photo(
-                    photo=f,
-                    caption=(
-                        f"<b>{language_manager.get_message('custom_game_created', user.id, user_language)}</b>\n\n"
-                        f"<b>{language_manager.get_message('game_id', user.id)}:</b> <code>{game_id}</code>\n"
-                        f"<b>{language_manager.get_message('invite_code', user.id)}:</b> <code>{invite_link}</code>\n\n"
-                        f"<b>{language_manager.get_message('share_link', user.id)}</b>\n{deep_link}\n\n"
-                        f"You are playing as {player_color}. "
-                        f"{'Your turn!' if (player_color == 'white' and turn_color == 'white') or (player_color == 'black' and turn_color == 'black') else 'Waiting for opponent to move.'}"
-                    ),
-                    parse_mode="HTML",
-                )
-
-            # Clean up
-            os.unlink(png_file)
-            if os.path.exists(photo_path):
-                os.unlink(photo_path)
-
-            # Clear the user_data
-            if "awaiting_custom_board" in context.user_data:
-                del context.user_data["awaiting_custom_board"]
-            if "custom_board_photo" in context.user_data:
-                del context.user_data["custom_board_photo"]
-            if "awaiting_turn_info" in context.user_data:
-                del context.user_data["awaiting_turn_info"]
-
-            return
-
-        # If not handling custom game setup, proceed with regular move handling
+        # Check if the message is a valid move format
         if not self.is_valid_move_format(message_text):
             return  # Don't respond to non-move messages
 
