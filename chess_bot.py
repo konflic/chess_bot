@@ -243,14 +243,15 @@ class ChessGameManager:
             # If there's a collision, try again with a new ID
             return self.create_game(player1_id, computer_opponent, custom_fen)
 
-    def join_game(self, invite_link, player2_id):
+    def join_game(self, invite_link, joining_player_id):
         """Join a game using an invite link."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # First, try to find a game where player2_id is NULL (normal case)
         cursor.execute(
             """
-            SELECT game_id, player1_id FROM games
+            SELECT game_id, player1_id, player2_id FROM games
             WHERE invite_link = ? AND player2_id IS NULL AND status = 'waiting'
         """,
             (invite_link,),
@@ -258,7 +259,7 @@ class ChessGameManager:
 
         result = cursor.fetchone()
         if result:
-            game_id, player1_id = result
+            game_id, player1_id, _ = result
 
             # Check if these two players already have a playing game together
             cursor.execute(
@@ -267,7 +268,7 @@ class ChessGameManager:
                 WHERE ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
                 AND status = 'playing'
                 """,
-                (player1_id, player2_id, player2_id, player1_id),
+                (player1_id, joining_player_id, joining_player_id, player1_id),
             )
 
             existing_game = cursor.fetchone()
@@ -282,16 +283,70 @@ class ChessGameManager:
                 SET player2_id = ?, status = 'playing'
                 WHERE game_id = ?
             """,
-                (player2_id, game_id),
+                (joining_player_id, game_id),
             )
 
             conn.commit()
             conn.close()
 
             return game_id, player1_id
-        else:
+
+        # If not found, try to find a game where player1_id is NULL (FEN game with black preference)
+        cursor.execute(
+            """
+            SELECT game_id, player1_id, player2_id FROM games
+            WHERE invite_link = ? AND player1_id IS NULL AND status = 'waiting'
+        """,
+            (invite_link,),
+        )
+
+        result = cursor.fetchone()
+        if result:
+            game_id, _, player2_id = result
+
+            # Check if these two players already have a playing game together
+            cursor.execute(
+                """
+                SELECT game_id FROM games
+                WHERE ((player1_id = ? AND player2_id = ?) OR (player1_id = ? AND player2_id = ?))
+                AND status = 'playing'
+                """,
+                (joining_player_id, player2_id, player2_id, joining_player_id),
+            )
+
+            existing_game = cursor.fetchone()
+            if existing_game:
+                conn.close()
+                return None, "existing_game"
+
+            # Update the game to add player1 and start the game
+            # Also set the current_turn based on the FEN
+            cursor.execute("SELECT fen FROM games WHERE game_id = ?", (game_id,))
+            fen_result = cursor.fetchone()
+            if fen_result:
+                import chess
+                board = chess.Board(fen_result[0])
+                current_turn = joining_player_id if board.turn else player2_id
+            else:
+                current_turn = joining_player_id  # Default to white's turn
+
+            cursor.execute(
+                """
+                UPDATE games
+                SET player1_id = ?, current_turn = ?, status = 'playing'
+                WHERE game_id = ?
+            """,
+                (joining_player_id, current_turn, game_id),
+            )
+
+            conn.commit()
             conn.close()
-            return None, None
+
+            return game_id, player2_id
+
+        # No valid game found
+        conn.close()
+        return None, None
 
     def get_game(self, game_id):
         """Get game information by game ID."""
@@ -805,7 +860,6 @@ class ChessBot:
         """Create a new game from a FEN string."""
         user = update.effective_user
         player_id = user.id
-        user_language = user.language_code
 
         # Check if FEN string is provided
         if not context.args or len(context.args) < 2:
@@ -887,38 +941,42 @@ class ChessBot:
 
         # Create a game with the custom position
         if color_preference == "white":
-            # Player is white
+            # Player is white - create game normally
             game_id, invite_link = self.game_manager.create_game(
                 player_id, computer_opponent=False, custom_fen=fen_string
             )
         else:
-            # Player is black, create a game where player2 will be the creator
-            # We'll create a temporary game and then update it
-            game_id, invite_link = self.game_manager.create_game(
-                player_id, computer_opponent=False, custom_fen=fen_string
-            )
+            # Player is black - we need to create a special game structure
+            # Create the game with a placeholder player1_id and set the user as waiting for player1
+            game_id = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+            invite_link = self.game_manager.generate_invite_link()
 
-            # Update the game to swap player positions
             conn = sqlite3.connect(self.game_manager.db_path)
             cursor = conn.cursor()
 
-            # Get the current turn from the FEN
-            current_turn = "player1_id" if board.turn else "player2_id"
+            try:
+                # Create game where user will be player2 (black) and we're waiting for player1 (white)
+                cursor.execute(
+                    """
+                    INSERT INTO games (game_id, player1_id, player2_id, current_turn, invite_link, fen, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        game_id,
+                        None,  # Waiting for player1 (white)
+                        player_id,  # User will be player2 (black)
+                        None,  # Will be set when player1 joins
+                        invite_link,
+                        fen_string,
+                        "waiting"
+                    ),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                # If there's a collision, try again with a new ID
+                conn.close()
+                return await self.fen_game(update, context)
 
-            cursor.execute(
-                """
-                UPDATE games
-                SET player1_id = NULL, player2_id = ?, current_turn = ?
-                WHERE game_id = ?
-                """,
-                (
-                    player_id,
-                    player_id if current_turn == "player2_id" else None,
-                    game_id,
-                ),
-            )
-
-            conn.commit()
             conn.close()
 
         # Set this as the active game for the player
