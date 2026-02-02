@@ -699,7 +699,11 @@ class ChessBot:
                         else language_manager.get_message("black", user.id, user_language)
                     )
 
-                    with open("start.png", "rb") as f:
+                    # Render the actual board state instead of using start.png
+                    board = chess.Board(game_info["fen"])
+                    board_image_file = self.render_board(board, game_id)
+
+                    with open(board_image_file, "rb") as f:
                         await update.message.reply_photo(
                             photo=f,
                             caption=(
@@ -715,6 +719,9 @@ class ChessBot:
                             parse_mode="HTML",
                         )
 
+                    # Clean up the temporary board image file
+                    os.unlink(board_image_file)
+
                     # Notify the other player
                     if opponent_id:
                         # Get opponent's language preference
@@ -724,7 +731,10 @@ class ChessBot:
                             else language_manager.get_message("white", opponent_id)
                         )
                         try:
-                            with open("start.png", "rb") as f:
+                            # Render the actual board state for the opponent too
+                            opponent_board_image_file = self.render_board(board, game_id)
+
+                            with open(opponent_board_image_file, "rb") as f:
                                 await context.bot.send_photo(
                                     chat_id=opponent_id,
                                     photo=f,
@@ -740,6 +750,9 @@ class ChessBot:
                                     ),
                                     parse_mode="HTML",
                                 )
+
+                            # Clean up the temporary board image file
+                            os.unlink(opponent_board_image_file)
                         except Exception:
                             pass
                 else:
