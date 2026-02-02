@@ -99,19 +99,6 @@ TRANSLATIONS = {
         "help_example_knight": "Move knight to f3",
         "help_example_castle": "Castle kingside",
         "help_example_capture": "Queen captures on f7",
-        # Custom game
-        "custom_game_title": "Custom Game Creation",
-        "custom_game_instructions": "To create a game with a custom board position:",
-        "custom_game_step1": "1. Send me a PNG image of the chess board",
-        "custom_game_step2": "2. Tell me whose turn it is (white or black)",
-        "custom_game_step3": "3. Choose which color you want to play as",
-        "custom_game_example": "Example: Send a photo, then type 'white turn, I play as black'",
-        "custom_game_thanks": "Thanks for the board image! Now please tell me:",
-        "custom_game_turn_question": "1. Whose turn is it (white or black)?",
-        "custom_game_color_question": "2. Which color do you want to play as?",
-        "custom_game_parse_error": "I couldn't understand your preferences. Please specify whose turn it is and which color you want to play as.",
-        "custom_game_recognition_error": "Sorry, I couldn't recognize the board position from your image. Please try again with a clearer image.",
-        "custom_game_created": "Custom game created!",
     },
     "ru": {
         # Welcome messages
@@ -211,19 +198,6 @@ TRANSLATIONS = {
         "help_example_castle": "Рокировка в короткую сторону",
         "help_example_capture": "Ферзь берет на f7",
         "command_menu_hint": "Напишите / чтобы увидеть все доступные команды в меню команд",
-        # Custom game
-        "custom_game_title": "Создание игры с пользовательской позицией",
-        "custom_game_instructions": "Чтобы создать игру с пользовательской позицией на доске:",
-        "custom_game_step1": "1. Отправьте мне PNG-изображение шахматной доски",
-        "custom_game_step2": "2. Скажите, чей сейчас ход (белые или черные)",
-        "custom_game_step3": "3. Выберите, каким цветом вы хотите играть",
-        "custom_game_example": "Пример: Отправьте фото, затем напишите 'ход белых, я играю черными'",
-        "custom_game_thanks": "Спасибо за изображение доски! Теперь, пожалуйста, скажите мне:",
-        "custom_game_turn_question": "1. Чей сейчас ход (белые или черные)?",
-        "custom_game_color_question": "2. Каким цветом вы хотите играть?",
-        "custom_game_parse_error": "Я не смог понять ваши предпочтения. Пожалуйста, укажите, чей сейчас ход и каким цветом вы хотите играть.",
-        "custom_game_recognition_error": "Извините, я не смог распознать позицию на доске с вашего изображения. Пожалуйста, попробуйте еще раз с более четким изображением.",
-        "custom_game_created": "Пользовательская игра создана!",
     },
 }
 
