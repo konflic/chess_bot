@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Join Game — CheZZ{% endblock %}
+{% block content %}
+
+{% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    <div class="actions">
+        <a href="/" class="btn btn-secondary">← Home</a>
+    </div>
+{% else %}
+    <div class="hero">
+        <h2>You were invited to a game!</h2>
+        <p class="subtitle">You will play as <strong>Black</strong>.</p>
+
+        <form action="/game/{{ game_id }}/join" method="post">
+            <input type="hidden" name="join_token" value="{{ join_token }}">
+            <button type="submit" class="btn btn-primary btn-lg">Join as Black →</button>
+        </form>
+
+        <p class="hint">Game: {{ game_id }}</p>
+    </div>
+{% endif %}
+
+{% endblock %}

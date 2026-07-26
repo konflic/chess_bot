@@ -1,64 +1,102 @@
-# Telegram Chess Bot
+# CheZZ — Telegram Chess Bot + Web App
 
-A multiplayer chess game for Telegram with real-time gameplay, database storage, and multilingual support.
+Play chess with friends via Telegram or a web browser.
 
 ## Features
 
-- Multiplayer chess games over Telegram
+- Multiplayer chess over Telegram or Web
+- Play against the computer
 - Invite links for joining games
-- Real-time notifications when it's your turn
-- Support for standard chess notation moves
-- SQLite database for storing game states
-- Automatic cleanup of finished games
-- Multilingual support (English and Russian)
-- Automatic language detection based on user's Telegram settings
-- Command menu in Telegram interface for easy navigation
-- Keyboard shortcuts for common commands
+- Board rendered as SVG/PNG
+- Multilingual (English, Russian)
+- Games auto-expire after 24 hours (web)
+- SQLite storage
 
-## Requirements
+## Quick Start with Docker
 
-- Python 3.7+
-- Dependencies listed in `requirements.txt`
-
-## Setup
-
-1. Install the required packages:
 ```bash
+# Start both Telegram bot and web app
+docker compose up -d
+
+# Or start only one service:
+docker compose up -d bot    # Telegram bot only
+docker compose up -d web    # Web app only
+```
+
+- **Web app**: http://localhost:8000
+- **Telegram bot**: talk to `@chezz_game_bot` on Telegram
+
+## Local Development (no Docker)
+
+You can run the **web app alone** without a Telegram token — only the bot requires it.
+
+### 1. Set up
+
+```bash
+# Create virtual environment (recommended)
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-2. Obtain a Telegram bot token from [@BotFather](https://t.me/BotFather) on Telegram
+### 2. Run the web app
 
-3. Replace `YOUR_BOT_TOKEN_HERE` in the `TOKEN` file with your actual bot token
-
-4. Run the bot:
 ```bash
+uvicorn web.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Open http://localhost:8000 — the web app works immediately. No Telegram token needed.
+
+### 3. Run the Telegram bot (optional)
+
+```bash
+echo "YOUR_BOT_TOKEN_HERE" > TOKEN
 python bot.py
 ```
 
-## Usage
+### 4. After pulling new changes
 
-- `/start` - Display welcome message and instructions
-- `/newgame` - Create a new chess game and get an invite link
-- `/join [link]` - Join a game using an invite link
-- Move format: Type moves in algebraic notation (e.g., `e2e4`, `Nf3`, `O-O`)
+```bash
+pip install -r requirements.txt  # install any new dependencies
+# No DB migrations needed — tables are created/updated automatically on startup
+```
 
-## How to Play
+## How to Play (Web)
 
-1. Player 1 creates a game using `/newgame`
-2. Player 1 shares the generated invite link with Player 2
-3. Player 2 joins the game using `/join [link]`
-4. Players take turns making moves in algebraic notation
-5. The bot sends notifications to players when it's their turn
-6. The game ends when there's a checkmate or draw
+1. Open http://localhost:8000
+2. Click **Create New Game**
+3. Share the invite link with a friend
+4. Friend opens the link and clicks **Join as Black**
+5. Take turns typing moves (e.g. `e2e4`, `Nf3`, `O-O`)
+6. Click **↻ Refresh** to see the latest board
 
-## Technical Details
+## Commands (Telegram)
 
-- Chess engine powered by `python-chess` library
-- SQLite database stores active games and move history
-- Games are automatically removed from database when finished
-- Each game has a unique invite link that becomes invalid after use
-- Language support automatically detects user's language from Telegram settings
-- All messages are translated based on user's preferred language
-- Command menu appears in Telegram's menu button for easy access
-- Keyboard shortcuts provide quick access to common commands
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message |
+| `/help` | All commands |
+| `/newgame` | Create a new game |
+| `/playvs` | Play against computer |
+| `/status` | Show current active game |
+| `/board` | Show board image |
+| `/ping` | Remind opponent it's their turn |
+| `/surrender` | Surrender current game |
+
+## Project Structure
+
+```
+chess_bot/
+├── core/              # Shared logic (engine, game manager, constants)
+├── bot/               # Telegram bot (uses core/)
+├── web/               # FastAPI web app (uses core/)
+│   ├── main.py        # Routes
+│   ├── templates/     # Jinja2 HTML templates
+│   └── static/        # CSS
+├── configuration.py   # Bot name, version, paths
+├── languages.py       # Translations
+├── docker-compose.yaml
+└── Dockerfile
+```
