@@ -2,15 +2,15 @@
 {% block content %}
 <div class="hero">
     <h1>CheZZ</h1>
-    <p class="subtitle">Play chess with friends</p>
+    <p class="subtitle">{{ _('Play chess with friends') }}</p>
 
     <form action="/games/create" method="post">
-        <button type="submit" class="btn btn-primary btn-lg">Create New Game</button>
+        <button type="submit" class="btn btn-primary btn-lg">{{ _('Create New Game') }}</button>
     </form>
 
     <p class="hint">
-        Share the game link with a friend to play together.<br>
-        Games expire 24 hours after creation.
+        {{ _('Share the game link with a friend to play together.') }}<br>
+        {{ _('Games expire 24 hours after creation.') }}
     </p>
 </div>
 {% endblock %}

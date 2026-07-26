@@ -126,10 +126,14 @@ class ChessGameManager:
                 status TEXT NOT NULL DEFAULT 'waiting',
                 move_count INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP NOT NULL
+                expires_at TIMESTAMP NOT NULL,
+                winner TEXT DEFAULT NULL,
+                result_reason TEXT DEFAULT NULL
             )
         """
         )
+
+        self._apply_web_games_migrations(cursor)
 
         cursor.execute(
             """
@@ -455,6 +459,14 @@ class ChessGameManager:
             self.delete_game(game["game_id"])
         return len(abandoned)
 
+    def _apply_web_games_migrations(self, cursor):
+        cursor.execute("PRAGMA table_info(web_games)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "winner" not in columns:
+            cursor.execute("ALTER TABLE web_games ADD COLUMN winner TEXT DEFAULT NULL")
+        if "result_reason" not in columns:
+            cursor.execute("ALTER TABLE web_games ADD COLUMN result_reason TEXT DEFAULT NULL")
+
     # ==================== Web methods ====================
 
     def create_web_game(self):
@@ -491,7 +503,7 @@ class ChessGameManager:
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT game_id, fen, status, move_count, created_at, expires_at FROM web_games WHERE game_id = ?",
+            "SELECT game_id, fen, status, move_count, created_at, expires_at, winner, result_reason FROM web_games WHERE game_id = ?",
             (game_id,),
         )
         row = cursor.fetchone()
@@ -505,6 +517,8 @@ class ChessGameManager:
                 "move_count": row[3],
                 "created_at": row[4],
                 "expires_at": row[5],
+                "winner": row[6],
+                "result_reason": row[7],
             }
         return None
 
@@ -587,22 +601,45 @@ class ChessGameManager:
 
         return black_token, None
 
-    def get_web_moves(self, game_id):
+    def get_web_moves(self, game_id, created_at=None):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT move_san FROM web_moves WHERE game_id = ? ORDER BY id",
+            "SELECT move_san, timestamp FROM web_moves WHERE game_id = ? ORDER BY id",
             (game_id,),
         )
-        moves = [row[0] for row in cursor.fetchall()]
+        rows = cursor.fetchall()
         conn.close()
 
+        if created_at:
+            start = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+        else:
+            start = None
+
+        def fmt_offset(move_ts):
+            if not start:
+                return ""
+            t = datetime.datetime.strptime(move_ts, "%Y-%m-%d %H:%M:%S")
+            secs = int((t - start).total_seconds())
+            h = secs // 3600
+            m = (secs % 3600) // 60
+            s = secs % 60
+            return f"{h}:{m:02d}:{s:02d}"
+
         paired = []
-        for i in range(0, len(moves), 2):
-            white = moves[i]
-            black = moves[i + 1] if i + 1 < len(moves) else None
-            paired.append({"number": i // 2 + 1, "white": white, "black": black})
+        for i in range(0, len(rows), 2):
+            ws, wt = rows[i][0], rows[i][1]
+            pair = {
+                "number": i // 2 + 1,
+                "white": {"san": ws, "time": fmt_offset(wt)},
+            }
+            if i + 1 < len(rows):
+                bs, bt = rows[i + 1][0], rows[i + 1][1]
+                pair["black"] = {"san": bs, "time": fmt_offset(bt)}
+            else:
+                pair["black"] = None
+            paired.append(pair)
 
         return paired
 
@@ -634,19 +671,22 @@ class ChessGameManager:
             if board.is_checkmate():
                 game_status = "finished"
                 winner = player["color"]
+                result_reason = "checkmate"
             elif board.is_stalemate() or board.is_insufficient_material() or board.can_claim_draw():
                 game_status = "finished"
                 winner = "draw"
+                result_reason = "draw"
             else:
                 game_status = "playing"
                 winner = None
+                result_reason = None
 
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
             cursor.execute(
-                "UPDATE web_games SET fen = ?, status = ?, move_count = move_count + 1 WHERE game_id = ?",
-                (board.fen(), game_status, game_id),
+                "UPDATE web_games SET fen = ?, status = ?, winner = ?, result_reason = ?, move_count = move_count + 1 WHERE game_id = ?",
+                (board.fen(), game_status, winner, result_reason, game_id),
             )
 
             cursor.execute(
@@ -662,10 +702,35 @@ class ChessGameManager:
                 "new_fen": board.fen(),
                 "status": game_status,
                 "winner": winner,
+                "result_reason": result_reason,
             }
 
         except ValueError as e:
             return {"success": False, "error": f"Invalid move notation: {str(e)}"}
+
+    def resign_web_game(self, game_id, player_token):
+        game = self.get_web_game(game_id)
+        if not game:
+            return {"success": False, "error": "Game not found"}
+        if game["status"] != "playing":
+            return {"success": False, "error": "Game is not in progress"}
+
+        player = self.get_web_player(player_token)
+        if not player or player["game_id"] != game_id:
+            return {"success": False, "error": "Player not found in this game"}
+
+        winner = "black" if player["color"] == "white" else "white"
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE web_games SET status = 'finished', winner = ?, result_reason = 'resign' WHERE game_id = ?",
+            (winner, game_id),
+        )
+        conn.commit()
+        conn.close()
+
+        return {"success": True, "winner": winner, "result_reason": "resign"}
 
     def cleanup_expired_web_games(self):
         conn = sqlite3.connect(self.db_path)

@@ -1,33 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}CheZZ Web{% endblock %}</title>
+    <title>{% block title %}CheZZ{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="container">
         <div class="top-bar">
-            <a href="/" class="logo">♟ CheZZ</a>
-            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+            <a href="/" class="logo">♟ CheZZ <span class="version">v1.0</span></a>
+            <div class="header-controls">
+                <form action="/lang/{% if lang == 'ru' %}en{% else %}ru{% endif %}" method="post" class="lang-form">
+                    <button type="submit" class="icon-btn" title="{% if lang == 'ru' %}English{% else %}Русский{% endif %}">{{ lang }}</button>
+                </form>
+                <button class="icon-btn" id="themeToggle" onclick="toggleTheme()">🌙</button>
+            </div>
         </div>
         {% block content %}{% endblock %}
     </div>
     <script>
+    const copyIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+
     function copy(btn, inputId) {
         const input = document.getElementById(inputId);
         input.select();
         input.setSelectionRange(0, 99999);
         try {
             navigator.clipboard.writeText(input.value);
-            btn.textContent = 'Copied!';
-            setTimeout(function(){ btn.textContent = 'Copy'; }, 2000);
         } catch (e) {
             document.execCommand('copy');
-            btn.textContent = 'Copied!';
-            setTimeout(function(){ btn.textContent = 'Copy'; }, 2000);
         }
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        setTimeout(function(){ btn.innerHTML = copyIcon; }, 2000);
     }
 
     function setTheme(theme) {

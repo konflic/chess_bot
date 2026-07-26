@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Game {{ game_id }} — CheZZ{% endblock %}
+{% block title %}{{ _('Game: %(id)s', id=game_id) }} — CheZZ{% endblock %}
 {% block content %}
 
 <div class="game-header">
-    <h2>Game: {{ game_id }}</h2>
+    <h2>{{ _('Game: %(id)s', id=game_id) }}</h2>
     {% if game_status == 'waiting' %}
-        <span class="badge badge-waiting">Waiting for opponent</span>
+        <span class="badge badge-waiting">{{ _('Waiting for opponent') }}</span>
     {% elif game_status == 'playing' %}
-        <span class="badge badge-playing">Playing</span>
+        <span class="badge badge-playing">{{ _('Playing') }}</span>
     {% elif game_status == 'finished' %}
-        <span class="badge badge-finished">Finished</span>
+        <span class="badge badge-finished">{{ _('Finished') }}</span>
     {% endif %}
     <span class="time-left">⏱ {{ time_left }}</span>
 </div>
@@ -24,88 +24,101 @@
 
 {% if game_status == 'playing' and my_color %}
     <div class="section player-area">
-        <p>You play as <strong>{{ my_color }}</strong>.</p>
+        <p>{{ _('You play as %(color)s', color=_(my_color)) }}.</p>
         {% if is_my_turn %}
             <form action="/game/{{ game_id }}/move" method="post" class="move-form">
                 <input type="hidden" name="player_token" value="{{ player_token }}">
                 <input type="text" name="move" placeholder="e.g. e2e4" autocomplete="off" class="input" required>
-                <button type="submit" class="btn btn-primary">Move</button>
+                <button type="submit" class="btn btn-primary">{{ _('Move') }}</button>
             </form>
         {% else %}
-            <p class="waiting-msg">
-                ⏳ Waiting for opponent...
-                <a href="{{ request.url }}" class="btn-refresh">↻</a>
-            </p>
+            <div class="waiting-msg">
+                <span>⏳ {{ _('Waiting for opponent...') }}</span>
+                <a href="{{ request.url }}" class="btn btn-secondary btn-sm">{{ _('Refresh') }}</a>
+            </div>
         {% endif %}
     </div>
 {% endif %}
 
 {% if game_status == 'finished' %}
     <div class="section result-box">
-        {% if winner == 'draw' %}
-            <p class="result-draw">🏁 Game ended in a draw!</p>
+        {% if result_reason == 'resign' %}
+            {% if winner == my_color %}
+                <p class="result-win">🏆 {{ _('Your opponent gave up — you win!') }}</p>
+            {% elif my_color %}
+                <p class="result-lose">💀 {{ _('You gave up — opponent wins.') }}</p>
+            {% else %}
+                <p class="result-draw">{{ _('Game ended — one player gave up.') }}</p>
+            {% endif %}
+        {% elif winner == 'draw' %}
+            <p class="result-draw">🏁 {{ _('Game ended in a draw!') }}</p>
         {% elif winner == my_color %}
-            <p class="result-win">🏆 You win!</p>
+            <p class="result-win">🏆 {{ _('You win!') }}</p>
         {% elif my_color %}
-            <p class="result-lose">💀 You lose!</p>
+            <p class="result-lose">💀 {{ _('You lose!') }}</p>
         {% else %}
-            <p class="result-draw">Game ended.</p>
+            <p class="result-draw">{{ _('Game ended.') }}</p>
         {% endif %}
     </div>
 {% endif %}
 
 <div class="section moves">
-    <h3>Moves</h3>
+    <h3>{{ _('Moves') }}</h3>
     {% if moves %}
         <table class="moves-table">
-            {% if my_color %}
             <tr>
                 <th></th>
-                <th>Me</th>
-                <th>Opponent</th>
+                <th>{{ _('WHITE') }}</th>
+                <th class="col-time">{{ _('TIME') }}</th>
+                <th>{{ _('BLACK') }}</th>
+                <th class="col-time">{{ _('TIME') }}</th>
             </tr>
-            {% else %}
-            <tr>
-                <th></th>
-                <th>White</th>
-                <th>Black</th>
-            </tr>
-            {% endif %}
             {% for pair in moves %}
             <tr>
                 <td class="move-num">{{ pair.number }}.</td>
-                {% if my_color == 'black' %}
-                <td class="move-opponent">{{ pair.white }}</td>
-                <td class="move-me">{{ pair.black or '' }}</td>
+                <td class="move-san">{{ pair.white.san }}</td>
+                <td class="move-time">{{ pair.white.time }}</td>
+                {% if pair.black %}
+                <td class="move-san">{{ pair.black.san }}</td>
+                <td class="move-time">{{ pair.black.time }}</td>
                 {% else %}
-                <td class="move-me">{{ pair.white }}</td>
-                <td class="move-opponent">{{ pair.black or '' }}</td>
+                <td class="move-san"></td>
+                <td class="move-time"></td>
                 {% endif %}
             </tr>
             {% endfor %}
         </table>
     {% else %}
-        <p class="muted">No moves yet.</p>
+        <p class="muted">{{ _('No moves yet.') }}</p>
     {% endif %}
 </div>
 
 {% if game_status == 'waiting' and is_creator %}
     <div class="section share-box">
-        <p>Share this link with a friend to invite them:</p>
+        <p>{{ _('Share this link with a friend to invite them:') }}</p>
         <div class="copy-row">
             <input type="text" value="{{ share_link }}" readonly class="input share-input" id="share-link">
-            <button class="btn btn-copy" onclick="copy(this, 'share-link')">Copy</button>
+            <button class="btn btn-icon" onclick="copy(this, 'share-link')" aria-label="{{ _('Copy') }}">{{ copyIcon|safe }}</button>
         </div>
     </div>
 {% endif %}
 
 {% if my_color and game_status in ('playing', 'finished') %}
     <div class="section share-box">
-        <p>Spectator link — share so others can watch:</p>
+        <p>{{ _('Spectator link — share so others can watch:') }}</p>
         <div class="copy-row">
+            <button class="btn btn-icon" onclick="copy(this, 'spec-link')" aria-label="{{ _('Copy') }}">{{ copyIcon|safe }}</button>
             <input type="text" value="{{ spectator_link }}" readonly class="input share-input" id="spec-link">
-            <button class="btn btn-copy" onclick="copy(this, 'spec-link')">Copy</button>
         </div>
+    </div>
+{% endif %}
+
+{% if game_status == 'playing' and my_color %}
+    <div class="section resign-section">
+        <form action="/game/{{ game_id }}/resign" method="post" onsubmit="return confirm('{{ _("Are you sure you want to give up? The game will be ended and your opponent will win.") }}')">
+            <input type="hidden" name="player_token" value="{{ player_token }}">
+            <button type="submit" class="btn btn-danger">{{ _('Give Up') }}</button>
+        </form>
     </div>
 {% endif %}
 

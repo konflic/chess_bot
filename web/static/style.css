@@ -69,6 +69,8 @@
     --time-left: #aaa;
     --logo: #e0e0e0;
     --link: #6ab0f3;
+    --btn-danger-bg: #b02a37;
+    --btn-danger-hover: #a52834;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -99,18 +101,30 @@ a.logo {
     text-decoration: none;
     color: var(--logo);
 }
+.version { font-size: 0.7rem; color: var(--text-muted); font-weight: 400; }
 
-.theme-toggle {
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.icon-btn {
     background: none;
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 1.1rem;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
     cursor: pointer;
     color: var(--text);
+    text-transform: uppercase;
     transition: background .15s;
+    line-height: 1.4;
 }
-.theme-toggle:hover { background: var(--btn-secondary-bg); }
+.icon-btn:hover { background: var(--btn-secondary-bg); }
+
+.lang-form { display: inline; }
 
 .hero { text-align: center; padding: 40px 0; }
 .hero h1 { font-size: 3rem; margin-bottom: 0.3rem; }
@@ -133,6 +147,10 @@ a.logo {
 .btn-primary:hover { background: #357abd; }
 .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-text); }
 .btn-secondary:hover { background: var(--btn-secondary-hover); }
+.btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+.btn-danger { background: var(--btn-danger-bg, #dc3545); color: #fff; width: 100%; }
+.btn-danger:hover { background: var(--btn-danger-hover, #c82333); }
+.resign-section { text-align: center; }
 
 .input {
     padding: 10px 12px;
@@ -165,6 +183,7 @@ a.logo {
 }
 .game-header h2 { font-size: 1.1rem; word-break: break-all; }
 
+
 .badge {
     font-size: 0.75rem;
     padding: 3px 10px;
@@ -178,33 +197,27 @@ a.logo {
 .time-left { margin-left: auto; font-size: 0.8rem; color: var(--time-left); white-space: nowrap; }
 
 .moves h3 { margin-bottom: 8px; font-size: 0.95rem; }
-.moves-table { width: 100%; font-family: monospace; font-size: 0.95rem; }
-.moves-table th { padding: 2px 4px; font-weight: 600; color: var(--moves-th); font-size: 0.8rem; text-transform: uppercase; }
-.moves-table td { padding: 2px 4px; }
-.move-num { color: var(--move-num); width: 30px; }
-.move-me { width: 50%; }
-.move-opponent { width: 50%; color: var(--move-opponent); }
+.moves-table { width: 100%; font-family: monospace; font-size: 0.9rem; table-layout: fixed; }
+.moves-table th { padding: 2px 4px; font-weight: 600; color: var(--moves-th); font-size: 0.75rem; text-transform: uppercase; }
+.moves-table td { padding: 2px 4px; white-space: nowrap; }
+.move-num { color: var(--move-num); width: 28px; text-align: right; }
+.move-san { width: auto; }
+.move-time { color: var(--text-muted); font-size: 0.75rem; width: 72px; }
+.col-time { width: 72px; }
 .muted { color: var(--text-muted); font-size: 0.85rem; }
 
 .share-box p { margin-bottom: 8px; font-size: 0.9rem; }
 .share-input { font-family: monospace; font-size: 0.8rem; background: var(--input-bg); }
 .copy-row { display: flex; gap: 6px; }
 .copy-row .input { flex: 1; }
-.btn-copy { background: var(--btn-copy-bg); color: var(--text); padding: 10px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; white-space: nowrap; transition: background .15s; }
-.btn-copy:hover { background: var(--btn-copy-hover); }
+.btn-copy, .btn-icon { background: var(--btn-copy-bg); color: var(--text); padding: 10px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; white-space: nowrap; transition: background .15s; display: inline-flex; align-items: center; justify-content: center; }
+.btn-copy:hover, .btn-icon:hover { background: var(--btn-copy-hover); }
+.btn-icon { padding: 10px; line-height: 0; }
 
 .player-area p { margin-bottom: 10px; }
 .move-form { display: flex; gap: 10px; }
-.waiting-msg { color: var(--waiting-msg); font-size: 1rem; display: flex; align-items: center; gap: 8px; }
-.btn-refresh {
-    text-decoration: none;
-    font-size: 1.2rem;
-    color: var(--text-secondary);
-    padding: 2px 8px;
-    border-radius: 4px;
-    transition: background .15s;
-}
-.btn-refresh:hover { background: var(--btn-secondary-bg); }
+.waiting-msg { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.waiting-msg span { color: var(--waiting-msg); font-size: 1rem; }
 
 .result-box { text-align: center; }
 .result-win { font-size: 1.3rem; color: var(--result-win); }
