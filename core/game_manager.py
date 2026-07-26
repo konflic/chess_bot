@@ -153,12 +153,15 @@ class ChessGameManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 game_id TEXT NOT NULL,
                 move_san TEXT NOT NULL,
+                move_uci TEXT NOT NULL,
                 player_token TEXT NOT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (game_id) REFERENCES web_games(game_id) ON DELETE CASCADE
             )
         """
         )
+
+        self._apply_web_moves_migrations(cursor)
 
         cursor.execute(
             """
@@ -355,7 +358,10 @@ class ChessGameManager:
         board = chess.Board(game["fen"])
 
         try:
-            move = board.parse_san(move_san)
+            normalized = move_san.lower()
+            if normalized and normalized[0] in "nbrqk":
+                normalized = normalized[0].upper() + normalized[1:]
+            move = board.parse_san(normalized)
             if board.is_legal(move):
                 board.push(move)
 
@@ -466,6 +472,12 @@ class ChessGameManager:
             cursor.execute("ALTER TABLE web_games ADD COLUMN winner TEXT DEFAULT NULL")
         if "result_reason" not in columns:
             cursor.execute("ALTER TABLE web_games ADD COLUMN result_reason TEXT DEFAULT NULL")
+
+    def _apply_web_moves_migrations(self, cursor):
+        cursor.execute("PRAGMA table_info(web_moves)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if "move_uci" not in columns:
+            cursor.execute("ALTER TABLE web_moves ADD COLUMN move_uci TEXT DEFAULT ''")
 
     # ==================== Web methods ====================
 
@@ -606,7 +618,10 @@ class ChessGameManager:
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT move_san, timestamp FROM web_moves WHERE game_id = ? ORDER BY id",
+            "SELECT wm.move_san, wm.move_uci, wm.timestamp, wp.color "
+            "FROM web_moves wm "
+            "JOIN web_players wp ON wm.player_token = wp.player_token "
+            "WHERE wm.game_id = ? ORDER BY wm.id",
             (game_id,),
         )
         rows = cursor.fetchall()
@@ -617,31 +632,22 @@ class ChessGameManager:
         else:
             start = None
 
-        def fmt_offset(move_ts):
-            if not start:
-                return ""
-            t = datetime.datetime.strptime(move_ts, "%Y-%m-%d %H:%M:%S")
-            secs = int((t - start).total_seconds())
-            h = secs // 3600
-            m = (secs % 3600) // 60
-            s = secs % 60
-            return f"{h}:{m:02d}:{s:02d}"
+        moves = []
+        for i, (san, uci, ts, color) in enumerate(rows, 1):
+            t = ""
+            if start:
+                dt = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                secs = int((dt - start).total_seconds())
+                h = secs // 3600
+                m = (secs % 3600) // 60
+                s = secs % 60
+                t = f"{h}:{m:02d}:{s:02d}"
+            display = uci[:2] + "->" + uci[2:4] if len(uci) >= 4 else san
+            if len(uci) > 4:
+                display += uci[4:]
+            moves.append({"number": i, "time": t, "color": color, "display": display})
 
-        paired = []
-        for i in range(0, len(rows), 2):
-            ws, wt = rows[i][0], rows[i][1]
-            pair = {
-                "number": i // 2 + 1,
-                "white": {"san": ws, "time": fmt_offset(wt)},
-            }
-            if i + 1 < len(rows):
-                bs, bt = rows[i + 1][0], rows[i + 1][1]
-                pair["black"] = {"san": bs, "time": fmt_offset(bt)}
-            else:
-                pair["black"] = None
-            paired.append(pair)
-
-        return paired
+        return moves
 
     def make_web_move(self, game_id, player_token, move_san):
         game = self.get_web_game(game_id)
@@ -662,10 +668,14 @@ class ChessGameManager:
             return {"success": False, "error": "Not your turn"}
 
         try:
-            move = board.parse_san(move_san)
+            normalized = move_san.lower()
+            if normalized and normalized[0] in "nbrqk":
+                normalized = normalized[0].upper() + normalized[1:]
+            move = board.parse_san(normalized)
             if not board.is_legal(move):
                 return {"success": False, "error": "Illegal move"}
 
+            move_uci = move.uci()
             board.push(move)
 
             if board.is_checkmate():
@@ -690,8 +700,8 @@ class ChessGameManager:
             )
 
             cursor.execute(
-                "INSERT INTO web_moves (game_id, move_san, player_token) VALUES (?, ?, ?)",
-                (game_id, move_san, player_token),
+                "INSERT INTO web_moves (game_id, move_san, move_uci, player_token) VALUES (?, ?, ?, ?)",
+                (game_id, move_san, move_uci, player_token),
             )
 
             conn.commit()
@@ -731,6 +741,37 @@ class ChessGameManager:
         conn.close()
 
         return {"success": True, "winner": winner, "result_reason": "resign"}
+
+    def list_web_games(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT game_id, fen, status, move_count, created_at, expires_at, winner, result_reason "
+            "FROM web_games ORDER BY created_at DESC"
+        )
+        rows = cursor.fetchall()
+
+        games = []
+        for row in rows:
+            game = {
+                "game_id": row[0],
+                "status": row[2],
+                "move_count": row[3],
+                "created_at": row[4],
+                "expires_at": row[5],
+                "winner": row[6],
+                "result_reason": row[7],
+            }
+            cursor.execute(
+                "SELECT color FROM web_players WHERE game_id = ? ORDER BY created_at", (row[0],)
+            )
+            players = [p[0] for p in cursor.fetchall()]
+            game["white"] = True if "white" in players else False
+            game["black"] = True if "black" in players else False
+            games.append(game)
+
+        conn.close()
+        return games
 
     def cleanup_expired_web_games(self):
         conn = sqlite3.connect(self.db_path)

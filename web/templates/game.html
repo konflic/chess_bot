@@ -66,25 +66,12 @@
     <h3>{{ _('Moves') }}</h3>
     {% if moves %}
         <table class="moves-table">
+            {% for m in moves %}
             <tr>
-                <th></th>
-                <th>{{ _('WHITE') }}</th>
-                <th class="col-time">{{ _('TIME') }}</th>
-                <th>{{ _('BLACK') }}</th>
-                <th class="col-time">{{ _('TIME') }}</th>
-            </tr>
-            {% for pair in moves %}
-            <tr>
-                <td class="move-num">{{ pair.number }}.</td>
-                <td class="move-san">{{ pair.white.san }}</td>
-                <td class="move-time">{{ pair.white.time }}</td>
-                {% if pair.black %}
-                <td class="move-san">{{ pair.black.san }}</td>
-                <td class="move-time">{{ pair.black.time }}</td>
-                {% else %}
-                <td class="move-san"></td>
-                <td class="move-time"></td>
-                {% endif %}
+                <td class="move-num">{{ m.number }}.</td>
+                <td class="move-time">{{ m.time }}</td>
+                <td class="move-color">{{ m.color|upper }}</td>
+                <td class="move-san">{{ m.display|safe }}</td>
             </tr>
             {% endfor %}
         </table>

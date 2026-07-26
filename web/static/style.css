@@ -197,13 +197,12 @@ a.logo {
 .time-left { margin-left: auto; font-size: 0.8rem; color: var(--time-left); white-space: nowrap; }
 
 .moves h3 { margin-bottom: 8px; font-size: 0.95rem; }
-.moves-table { width: 100%; font-family: monospace; font-size: 0.9rem; table-layout: fixed; }
-.moves-table th { padding: 2px 4px; font-weight: 600; color: var(--moves-th); font-size: 0.75rem; text-transform: uppercase; }
+.moves-table { width: 100%; font-family: monospace; font-size: 0.9rem; }
 .moves-table td { padding: 2px 4px; white-space: nowrap; }
-.move-num { color: var(--move-num); width: 28px; text-align: right; }
+.move-num { color: var(--move-num); width: 28px; text-align: right; padding-right: 8px; }
+.move-time { color: var(--text-muted); font-size: 0.75rem; width: 80px; }
+.move-color { font-weight: 600; font-size: 0.75rem; width: 56px; }
 .move-san { width: auto; }
-.move-time { color: var(--text-muted); font-size: 0.75rem; width: 72px; }
-.col-time { width: 72px; }
 .muted { color: var(--text-muted); font-size: 0.85rem; }
 
 .share-box p { margin-bottom: 8px; font-size: 0.9rem; }

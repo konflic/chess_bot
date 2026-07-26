@@ -282,6 +282,18 @@ async def resign_game(
     )
 
 
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request, token: str = ""):
+    admin_token = os.environ.get("ADMIN_TOKEN")
+    if not admin_token or token != admin_token:
+        return HTMLResponse("Not Found", status_code=404)
+
+    games = gm.list_web_games()
+    ctx = _common_context(request)
+    ctx.update({"request": request, "games": games})
+    return templates.TemplateResponse("admin.html", ctx)
+
+
 @app.post("/game/{game_id}/move")
 async def make_move(
     request: Request,

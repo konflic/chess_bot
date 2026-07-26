@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Admin — CheZZ{% endblock %}
+{% block content %}
+
+<h2>Games</h2>
+
+<div class="section">
+    {% if games %}
+        <table class="moves-table">
+            <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>W</th>
+                <th>B</th>
+                <th>Moves</th>
+                <th>Result</th>
+                <th>Created</th>
+                <th>Expires</th>
+            </tr>
+            {% for g in games %}
+            <tr>
+                <td><a href="/game/{{ g.game_id }}" style="font-family:monospace">{{ g.game_id }}</a></td>
+                <td>{{ g.status }}</td>
+                <td>{{ '✓' if g.white else '' }}</td>
+                <td>{{ '✓' if g.black else '' }}</td>
+                <td>{{ g.move_count }}</td>
+                <td>
+                    {% if g.winner %}
+                        {{ g.winner }}{% if g.result_reason %} ({{ g.result_reason }}){% endif %}
+                    {% endif %}
+                </td>
+                <td style="font-size:0.75rem">{{ g.created_at }}</td>
+                <td style="font-size:0.75rem">{{ g.expires_at }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p class="muted">No games.</p>
+    {% endif %}
+</div>
+
+{% endblock %}
