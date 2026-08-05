@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from core import battleship
 from core.battleship_manager import BattleshipManager
 from core.game_manager import ChessGameManager
+from configuration import APP_VERSION
 
 LOCALES = {"en", "ru"}
 
@@ -161,6 +162,7 @@ def _common_context(request: Request) -> dict:
         "_": lambda key, **kw: _translate(lang, key, **kw),
         "copyIcon": COPY_ICON_SVG,
         "nav": _nav_for(request),
+        "app_version": APP_VERSION,
     }
 
 

@@ -1,21 +1,10 @@
 services:
 
-  bot:
-    restart: always
-    volumes:
-      - ./tmp:/bot/tmp
-      - ./data:/bot/data
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: python bot.py
-
   web:
     restart: always
     ports:
       - "80:8000"
     volumes:
-      - ./tmp:/bot/tmp
       - ./data:/bot/data
     build:
       context: .

@@ -2,9 +2,6 @@ FROM python:3.12
 
 WORKDIR /bot
 
-RUN apt update
-RUN apt install git -y
-
 COPY requirements.txt .
 
 RUN pip install -U pip
@@ -12,4 +9,6 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-CMD ["python", "bot.py"]
+EXPOSE 8000
+
+CMD ["uvicorn", "web.main:app", "--host", "0.0.0.0", "--port", "8000"]

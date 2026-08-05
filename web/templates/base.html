@@ -9,7 +9,7 @@
 <body>
     <div class="container">
         <div class="top-bar">
-            <a href="/" class="logo">♟ CheZZ <span class="version">v1.1</span></a>
+            <a href="/" class="logo">♟ CheZZ <span class="version">v{{ app_version }}</span></a>
             <div class="header-controls">
                 <form action="/lang/{% if lang == 'ru' %}en{% else %}ru{% endif %}" method="post" class="lang-form">
                     <button type="submit" class="icon-btn" title="{% if lang == 'ru' %}English{% else %}Русский{% endif %}">{{ lang }}</button>
