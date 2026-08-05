@@ -152,22 +152,12 @@ COPY_ICON_SVG = (
 )
 
 
-def _nav_for(request: Request) -> str:
-    path = request.url.path
-    if path == "/":
-        return "home"
-    if path.startswith("/battleship"):
-        return "battleship"
-    return "chess"
-
-
 def _common_context(request: Request) -> dict:
     lang = _get_lang(request)
     return {
         "lang": lang,
         "_": lambda key, **kw: _translate(lang, key, **kw),
         "copyIcon": COPY_ICON_SVG,
-        "nav": _nav_for(request),
         "app_version": APP_VERSION,
     }
 

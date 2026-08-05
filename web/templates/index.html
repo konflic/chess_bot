@@ -1,16 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="hero">
-    <h1>🎮 GameZZ</h1>
-    <p class="subtitle">{{ _('Choose a game') }}</p>
-
-    <div class="game-list">
-        <form action="/games/create" method="post">
-            <button type="submit" class="game-card">{{ _('Chess') }}</button>
-        </form>
-        <form action="/battleship/create" method="post">
-            <button type="submit" class="game-card">{{ _('Battleship') }}</button>
-        </form>
-    </div>
+<div class="game-list">
+    <a href="/chess" class="game-nav-link">♟ {{ _('Chess') }}</a>
+    <a href="/battleship" class="game-nav-link">🚢 {{ _('Battleship') }}</a>
 </div>
 {% endblock %}

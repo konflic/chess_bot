@@ -248,52 +248,25 @@ a.logo {
 
 .actions { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
 
-/* ---- game nav ---- */
-
-.game-nav {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 14px;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 8px;
-}
-.game-nav a {
-    padding: 6px 14px;
-    border-radius: 6px;
-    text-decoration: none;
-    color: var(--text-secondary);
-    font-weight: 600;
-    font-size: 0.95rem;
-    transition: background .15s;
-}
-.game-nav a:hover { background: var(--btn-secondary-bg); }
-.game-nav a.active { background: var(--link); color: #fff; }
-
 /* ---- game list (hub) ---- */
 
 .game-list {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
-    max-width: 360px;
-    margin: 0 auto;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px 0;
 }
-.game-card {
-    background-color: var(--link);
-    border: none;
-    color: #fff;
-    padding: 15px 32px;
-    text-align: center;
-    text-decoration: none;
-    display: block;
-    font-size: 16px;
-    font-family: inherit;
-    font-weight: 600;
-    cursor: pointer;
+.game-nav-link {
+    padding: 10px 20px;
     border-radius: 6px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 1.1rem;
+    transition: background .15s;
 }
-.game-card:hover {
-    background-color: var(--btn-hover);
+.game-nav-link:hover {
+    background: var(--btn-secondary-bg);
 }
 
 /* ---- battleship boards ---- */
