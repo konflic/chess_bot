@@ -274,28 +274,26 @@ a.logo {
 .game-list {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
     max-width: 360px;
     margin: 0 auto;
 }
 .game-card {
-    display: block;
-    width: 100%;
-    background: var(--link);
-    color: #fff;
+    background-color: var(--link);
     border: none;
-    border-radius: 8px;
-    padding: 18px 24px;
+    color: #fff;
+    padding: 15px 32px;
     text-align: center;
+    text-decoration: none;
+    display: block;
+    font-size: 16px;
     font-family: inherit;
-    font-size: 1.15rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background .15s, transform .15s;
+    border-radius: 6px;
 }
 .game-card:hover {
-    background: var(--btn-hover);
-    transform: translateY(-1px);
+    background-color: var(--btn-hover);
 }
 
 /* ---- battleship boards ---- */
