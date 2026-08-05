@@ -33,6 +33,7 @@
     --time-left: #888;
     --logo: #333;
     --link: #4a90d9;
+    --btn-hover: #357abd;
     --bs-water: #dbeafe;
     --bs-ship: #64748b;
     --bs-hit: #ef4444;
@@ -75,6 +76,7 @@
     --time-left: #aaa;
     --logo: #e0e0e0;
     --link: #6ab0f3;
+    --btn-hover: #58a0e8;
     --btn-danger-bg: #b02a37;
     --btn-danger-hover: #a52834;
     --bs-water: #0f3460;
@@ -156,7 +158,7 @@ a.logo {
 }
 .btn-lg { padding: 14px 32px; font-size: 1.1rem; }
 .btn-primary { background: var(--link); color: #fff; }
-.btn-primary:hover { background: #357abd; }
+.btn-primary:hover { background: var(--btn-hover); }
 .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-text); }
 .btn-secondary:hover { background: var(--btn-secondary-hover); }
 .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
@@ -278,35 +280,21 @@ a.logo {
 }
 .game-card {
     display: block;
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 20px;
+    background: var(--link);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 18px 24px;
     text-decoration: none;
-    color: var(--text);
     text-align: center;
-    transition: transform .15s, border-color .15s, box-shadow .15s;
+    font-size: 1.15rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .15s;
 }
 .game-card:hover {
-    border-color: var(--link);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
-}
-.game-icon {
-    display: block;
-    font-size: 2.4rem;
-    margin-bottom: 8px;
-}
-.game-name {
-    display: block;
-    font-size: 1.3rem;
-    font-weight: 700;
-    margin-bottom: 4px;
-}
-.game-desc {
-    display: block;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
+    background: var(--btn-hover);
+    transform: translateY(-1px);
 }
 
 /* ---- battleship boards ---- */
