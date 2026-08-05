@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Battleship') }} — GameZZ{% endblock %}
+{% block title %}{{ _('Chess') }} — GameZZ{% endblock %}
 {% block content %}
 <div class="hero">
-    <h1>🚢 {{ _('Battleship') }}</h1>
-    <p class="subtitle">{{ _('Play battleship with friends') }}</p>
+    <h1>♟ {{ _('Chess') }}</h1>
+    <p class="subtitle">{{ _('Play chess with friends') }}</p>
 
-    <form action="/battleship/create" method="post">
+    <form action="/games/create" method="post">
         <button type="submit" class="btn btn-primary btn-lg">{{ _('Create New Game') }}</button>
     </form>
 

@@ -1,17 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="hero">
-    <h1>CheZZ</h1>
-    <p class="subtitle">{{ _('Play chess with friends') }}</p>
+    <h1>🎮 GameZZ</h1>
+    <p class="subtitle">{{ _('Choose a game') }}</p>
 
-    <form action="/games/create" method="post">
-        <button type="submit" class="btn btn-primary btn-lg">{{ _('Create New Game') }}</button>
-    </form>
-
-    <p class="hint">
-        {{ _('Share the game link with a friend to play together.') }}<br>
-        {{ _('Games expire 24 hours after creation.') }}<br>
-        <a href="/battleship" class="btn btn-secondary btn-sm" style="margin-top: 10px;">🚢 {{ _('Battleship') }}</a>
-    </p>
+    <div class="game-list">
+        <a href="/chess" class="game-card">
+            <span class="game-icon">♟</span>
+            <span class="game-name">{{ _('Chess') }}</span>
+            <span class="game-desc">{{ _('Play chess with friends') }}</span>
+        </a>
+        <a href="/battleship" class="game-card">
+            <span class="game-icon">🚢</span>
+            <span class="game-name">{{ _('Battleship') }}</span>
+            <span class="game-desc">{{ _('Play battleship with friends') }}</span>
+        </a>
+    </div>
 </div>
 {% endblock %}

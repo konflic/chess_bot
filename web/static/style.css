@@ -267,6 +267,48 @@ a.logo {
 .game-nav a:hover { background: var(--btn-secondary-bg); }
 .game-nav a.active { background: var(--link); color: #fff; }
 
+/* ---- game list (hub) ---- */
+
+.game-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 360px;
+    margin: 0 auto;
+}
+.game-card {
+    display: block;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    text-decoration: none;
+    color: var(--text);
+    text-align: center;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
+}
+.game-card:hover {
+    border-color: var(--link);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+}
+.game-icon {
+    display: block;
+    font-size: 2.4rem;
+    margin-bottom: 8px;
+}
+.game-name {
+    display: block;
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.game-desc {
+    display: block;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
 /* ---- battleship boards ---- */
 
 .bs-board {

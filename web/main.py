@@ -60,6 +60,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "Share this link with a friend to invite them:": "Отправьте эту ссылку другу, чтобы пригласить его:",
         "Copy": "Копировать",
         "Spectator link — share so others can watch:": "Ссылка для зрителей",
+        "Choose a game": "Выберите игру",
         "Play chess with friends": "Играйте в шахматы с друзьями",
         "Create New Game": "Новая игра",
         "Share the game link with a friend to play together.":
@@ -152,7 +153,12 @@ COPY_ICON_SVG = (
 
 
 def _nav_for(request: Request) -> str:
-    return "battleship" if request.url.path.startswith("/battleship") else "chess"
+    path = request.url.path
+    if path == "/":
+        return "home"
+    if path.startswith("/battleship"):
+        return "battleship"
+    return "chess"
 
 
 def _common_context(request: Request) -> dict:
@@ -182,7 +188,7 @@ async def lifespan(app: FastAPI):
     yield
     task.cancel()
 
-app = FastAPI(title="CheZZ Web", lifespan=lifespan)
+app = FastAPI(title="GameZZ Web", lifespan=lifespan)
 templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 
@@ -205,6 +211,13 @@ async def index(request: Request):
     ctx = _common_context(request)
     ctx.update({"request": request})
     return templates.TemplateResponse("index.html", ctx)
+
+
+@app.get("/chess", response_class=HTMLResponse)
+async def chess_index(request: Request):
+    ctx = _common_context(request)
+    ctx.update({"request": request})
+    return templates.TemplateResponse("chess_index.html", ctx)
 
 
 @app.post("/games/create")

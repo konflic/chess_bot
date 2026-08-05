@@ -1,4 +1,4 @@
-# CheZZ — Chess & Battleship Web App
+# GameZZ — Chess & Battleship Web App
 
 Play chess or battleship with friends in a web browser.
 

@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}CheZZ{% endblock %}</title>
+    <title>{% block title %}GameZZ{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="container">
         <div class="top-bar">
-            <a href="/" class="logo">♟ CheZZ <span class="version">v{{ app_version }}</span></a>
+            <a href="/" class="logo">🎮 GameZZ <span class="version">v{{ app_version }}</span></a>
             <div class="header-controls">
                 <form action="/lang/{% if lang == 'ru' %}en{% else %}ru{% endif %}" method="post" class="lang-form">
                     <button type="submit" class="icon-btn" title="{% if lang == 'ru' %}English{% else %}Русский{% endif %}">{{ lang }}</button>
@@ -18,7 +18,7 @@
             </div>
         </div>
         <nav class="game-nav">
-            <a href="/" class="{{ 'active' if nav == 'chess' else '' }}">♟ {{ _('Chess') }}</a>
+            <a href="/chess" class="{{ 'active' if nav == 'chess' else '' }}">♟ {{ _('Chess') }}</a>
             <a href="/battleship" class="{{ 'active' if nav == 'battleship' else '' }}">🚢 {{ _('Battleship') }}</a>
         </nav>
         {% block content %}{% endblock %}
