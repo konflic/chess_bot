@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Battleship') }} — CheZZ{% endblock %}
+{% block content %}
+<div class="hero">
+    <h1>🚢 {{ _('Battleship') }}</h1>
+    <p class="subtitle">{{ _('Play battleship with friends') }}</p>
+
+    <form action="/battleship/create" method="post">
+        <button type="submit" class="btn btn-primary btn-lg">{{ _('Create New Game') }}</button>
+    </form>
+
+    <p class="hint">
+        {{ _('Share the game link with a friend to play together.') }}<br>
+        {{ _('Games expire 24 hours after creation.') }}
+    </p>
+</div>
+{% endblock %}

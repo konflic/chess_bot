@@ -3,26 +3,21 @@ import random
 import string
 import chess
 import datetime
-import secrets
 
-from configuration import GAMES_DB
 from core.constants import COMPUTER_PLAYER, START_FEN
+from core.game_framework import GameManager
 
 
-def make_game_id():
-    return "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+class ChessGameManager(GameManager):
+    game_type = "chess"
+    sides = ("white", "black")
 
-
-def make_token(length=32):
-    return secrets.token_urlsafe(length)
-
-
-class ChessGameManager:
-    def __init__(self, db_path=GAMES_DB):
-        self.db_path = db_path
-        self.init_db()
+    def initial_state(self):
+        return {"fen": START_FEN}
 
     def init_db(self):
+        super().init_db()
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -117,63 +112,10 @@ class ChessGameManager:
         """
         )
 
-        # ---- web tables ----
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS web_games (
-                game_id TEXT PRIMARY KEY,
-                fen TEXT NOT NULL DEFAULT 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-                status TEXT NOT NULL DEFAULT 'waiting',
-                move_count INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP NOT NULL,
-                winner TEXT DEFAULT NULL,
-                result_reason TEXT DEFAULT NULL
-            )
-        """
-        )
-
-        self._apply_web_games_migrations(cursor)
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS web_players (
-                player_token TEXT PRIMARY KEY,
-                game_id TEXT NOT NULL,
-                color TEXT NOT NULL CHECK(color IN ('white', 'black')),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (game_id) REFERENCES web_games(game_id) ON DELETE CASCADE
-            )
-        """
-        )
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS web_moves (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                game_id TEXT NOT NULL,
-                move_san TEXT NOT NULL,
-                move_uci TEXT NOT NULL,
-                player_token TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (game_id) REFERENCES web_games(game_id) ON DELETE CASCADE
-            )
-        """
-        )
-
-        self._apply_web_moves_migrations(cursor)
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS web_join_tokens (
-                join_token TEXT PRIMARY KEY,
-                game_id TEXT NOT NULL,
-                used INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (game_id) REFERENCES web_games(game_id) ON DELETE CASCADE
-            )
-        """
-        )
+        # ---- web tables now live in the shared framework (match_* tables) ----
+        # Legacy web_* tables are dropped: games live only 24h, nothing to migrate.
+        for table in ("web_games", "web_players", "web_moves", "web_join_tokens"):
+            cursor.execute(f"DROP TABLE IF EXISTS {table}")
 
         conn.commit()
         conn.close()
@@ -465,178 +407,159 @@ class ChessGameManager:
             self.delete_game(game["game_id"])
         return len(abandoned)
 
-    def _apply_web_games_migrations(self, cursor):
-        cursor.execute("PRAGMA table_info(web_games)")
-        columns = [column[1] for column in cursor.fetchall()]
-        if "winner" not in columns:
-            cursor.execute("ALTER TABLE web_games ADD COLUMN winner TEXT DEFAULT NULL")
-        if "result_reason" not in columns:
-            cursor.execute("ALTER TABLE web_games ADD COLUMN result_reason TEXT DEFAULT NULL")
+    def _migrate_legacy_web_tables(self):
+        """Copy pre-framework web_* rows into the shared match_* tables.
 
-    def _apply_web_moves_migrations(self, cursor):
-        cursor.execute("PRAGMA table_info(web_moves)")
-        columns = [column[1] for column in cursor.fetchall()]
-        if "move_uci" not in columns:
-            cursor.execute("ALTER TABLE web_moves ADD COLUMN move_uci TEXT DEFAULT ''")
+        The web_* tables were written by the old chess web app. This runs once,
+        is idempotent and leaves the legacy tables in place (they are no longer
+        written to and are dropped with the rest of the old deployment).
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='web_games'")
+        if not cursor.fetchone():
+            conn.close()
+            return
+
+        cursor.execute(
+            "SELECT game_id, fen, status, move_count, created_at, expires_at, winner, result_reason FROM web_games"
+        )
+        for row in cursor.fetchall():
+            cursor.execute(
+                "INSERT OR IGNORE INTO match_sessions "
+                "(game_id, game_type, status, state, move_count, created_at, expires_at, winner, result_reason) "
+                "VALUES (?, 'chess', ?, ?, ?, ?, ?, ?, ?)",
+                (row[0], row[2], self._dumps({"fen": row[1]}), row[3], row[4], row[5], row[6], row[7]),
+            )
+
+        cursor.execute("SELECT player_token, game_id, color FROM web_players")
+        for row in cursor.fetchall():
+            cursor.execute(
+                "INSERT OR IGNORE INTO match_players (player_token, game_id, side) VALUES (?, ?, ?)",
+                row,
+            )
+
+        cursor.execute("SELECT join_token, game_id, used, created_at FROM web_join_tokens")
+        for row in cursor.fetchall():
+            cursor.execute(
+                "INSERT OR IGNORE INTO match_join_tokens (join_token, game_id, used, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                row,
+            )
+
+        cursor.execute("SELECT game_id, move_san, move_uci, player_token FROM web_moves")
+        for game_id, san, uci, token in cursor.fetchall():
+            cursor.execute("SELECT side FROM match_players WHERE player_token = ?", (token,))
+            side_row = cursor.fetchone()
+            cursor.execute(
+                "INSERT INTO match_events (game_id, side, event_type, data) VALUES (?, ?, 'move', ?)",
+                (game_id, side_row[0] if side_row else "", self._dumps({"san": san, "uci": uci})),
+            )
+
+        conn.commit()
+        conn.close()
+
+    def _migrate_legacy_web_tables(self):
+        """Copy pre-framework web_* rows into the shared match_* tables.
+
+        The web_* tables were written by the old chess web app. This runs once,
+        is idempotent and leaves the legacy tables in place (they are no longer
+        written to and are dropped with the rest of the old deployment).
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='web_games'")
+        if not cursor.fetchone():
+            conn.close()
+            return
+
+        cursor.execute(
+            "SELECT game_id, fen, status, move_count, created_at, expires_at, winner, result_reason FROM web_games"
+        )
+        for row in cursor.fetchall():
+            cursor.execute(
+                "INSERT OR IGNORE INTO match_sessions "
+                "(game_id, game_type, status, state, move_count, created_at, expires_at, winner, result_reason) "
+                "VALUES (?, 'chess', ?, ?, ?, ?, ?, ?, ?)",
+                (row[0], row[2], self._dumps({"fen": row[1]}), row[3], row[4], row[5], row[6], row[7]),
+            )
+
+        cursor.execute("SELECT player_token, game_id, color FROM web_players")
+        for row in cursor.fetchall():
+            cursor.execute(
+                "INSERT OR IGNORE INTO match_players (player_token, game_id, side) VALUES (?, ?, ?)",
+                row,
+            )
+
+        cursor.execute("SELECT join_token, game_id, used, created_at FROM web_join_tokens")
+        for row in cursor.fetchall():
+            cursor.execute(
+                "INSERT OR IGNORE INTO match_join_tokens (join_token, game_id, used, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                row,
+            )
+
+        cursor.execute("SELECT game_id, move_san, move_uci, player_token FROM web_moves")
+        for game_id, san, uci, token in cursor.fetchall():
+            cursor.execute("SELECT side FROM match_players WHERE player_token = ?", (token,))
+            side_row = cursor.fetchone()
+            cursor.execute(
+                "INSERT INTO match_events (game_id, side, event_type, data) VALUES (?, ?, 'move', ?)",
+                (game_id, side_row[0] if side_row else "", self._dumps({"san": san, "uci": uci})),
+            )
+
+        conn.commit()
+        conn.close()
 
     # ==================== Web methods ====================
 
     def create_web_game(self):
-        game_id = make_game_id()
-        white_token = make_token()
-        join_token = make_token()
-
-        now = datetime.datetime.utcnow()
-        expires_at = now + datetime.timedelta(hours=24)
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "INSERT INTO web_games (game_id, fen, status, expires_at) VALUES (?, ?, 'waiting', ?)",
-            (game_id, START_FEN, expires_at.isoformat()),
-        )
-        cursor.execute(
-            "INSERT INTO web_players (player_token, game_id, color) VALUES (?, ?, 'white')",
-            (white_token, game_id),
-        )
-        cursor.execute(
-            "INSERT INTO web_join_tokens (join_token, game_id) VALUES (?, ?)",
-            (join_token, game_id),
-        )
-
-        conn.commit()
-        conn.close()
-
-        return game_id, white_token, join_token
+        return self.create_session()
 
     def get_web_game(self, game_id):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT game_id, fen, status, move_count, created_at, expires_at, winner, result_reason FROM web_games WHERE game_id = ?",
-            (game_id,),
-        )
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            return {
-                "game_id": row[0],
-                "fen": row[1],
-                "status": row[2],
-                "move_count": row[3],
-                "created_at": row[4],
-                "expires_at": row[5],
-                "winner": row[6],
-                "result_reason": row[7],
-            }
-        return None
+        game = self.get_session(game_id)
+        if not game:
+            return None
+        return {
+            "game_id": game["game_id"],
+            "fen": game["state"].get("fen", START_FEN),
+            "status": game["status"],
+            "move_count": game["move_count"],
+            "created_at": game["created_at"],
+            "expires_at": game["expires_at"],
+            "winner": game["winner"],
+            "result_reason": game["result_reason"],
+        }
 
     def get_web_player(self, player_token):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT player_token, game_id, color FROM web_players WHERE player_token = ?",
-            (player_token,),
-        )
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            return {
-                "player_token": row[0],
-                "game_id": row[1],
-                "color": row[2],
-            }
-        return None
-
-    def validate_join_token(self, join_token):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT game_id, used FROM web_join_tokens WHERE join_token = ?",
-            (join_token,),
-        )
-        row = cursor.fetchone()
-        conn.close()
-
-        if not row:
-            return None, "Invalid invite link"
-        if row[1]:
-            return None, "This invite link has already been used"
-
-        game = self.get_web_game(row[0])
-        if not game:
-            return None, "Game not found"
-        if game["status"] != "waiting":
-            return None, "This game is no longer accepting players"
-
-        return game, None
+        player = self.get_player(player_token)
+        if not player:
+            return None
+        return {
+            "player_token": player["player_token"],
+            "game_id": player["game_id"],
+            "color": player["side"],
+        }
 
     def join_web_game(self, game_id, join_token):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT used FROM web_join_tokens WHERE join_token = ? AND game_id = ?",
-                       (join_token, game_id))
-        result = cursor.fetchone()
-
-        if not result:
-            conn.close()
-            return None, "Invalid invite link"
-
-        if result[0]:
-            conn.close()
-            return None, "This invite link has already been used"
-
-        cursor.execute("SELECT status FROM web_games WHERE game_id = ?", (game_id,))
-        game = cursor.fetchone()
-        if not game or game[0] != "waiting":
-            conn.close()
-            return None, "This game is no longer available to join"
-
-        black_token = make_token()
-
-        cursor.execute("UPDATE web_join_tokens SET used = 1 WHERE join_token = ?", (join_token,))
-        cursor.execute(
-            "INSERT INTO web_players (player_token, game_id, color) VALUES (?, ?, 'black')",
-            (black_token, game_id),
-        )
-        cursor.execute("UPDATE web_games SET status = 'playing' WHERE game_id = ?", (game_id,))
-
-        conn.commit()
-        conn.close()
-
-        return black_token, None
+        return self.join_session(game_id, join_token)
 
     def get_web_moves(self, game_id, created_at=None):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT wm.move_san, wm.move_uci, wm.timestamp, wp.color "
-            "FROM web_moves wm "
-            "JOIN web_players wp ON wm.player_token = wp.player_token "
-            "WHERE wm.game_id = ? ORDER BY wm.id",
-            (game_id,),
-        )
-        rows = cursor.fetchall()
-        conn.close()
-
         if created_at:
             start = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
         else:
             start = None
 
+        events = [e for e in self.get_events(game_id) if e["event_type"] == "move"]
         moves = []
-        for i, (san, uci, ts, color) in enumerate(rows, 1):
+        for i, event in enumerate(events, 1):
+            san = event["data"].get("san", "")
+            uci = event["data"].get("uci", "")
             t = ""
             if start:
-                dt = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                dt = datetime.datetime.strptime(event["timestamp"], "%Y-%m-%d %H:%M:%S")
                 secs = int((dt - start).total_seconds())
                 h = secs // 3600
                 m = (secs % 3600) // 60
@@ -645,7 +568,7 @@ class ChessGameManager:
             display = uci[:2] + "->" + uci[2:4] if len(uci) >= 4 else san
             if len(uci) > 4:
                 display += uci[4:]
-            moves.append({"number": i, "time": t, "color": color, "display": display})
+            moves.append({"number": i, "time": t, "color": event["side"], "display": display})
 
         return moves
 
@@ -693,19 +616,15 @@ class ChessGameManager:
 
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-
             cursor.execute(
-                "UPDATE web_games SET fen = ?, status = ?, winner = ?, result_reason = ?, move_count = move_count + 1 WHERE game_id = ?",
-                (board.fen(), game_status, winner, result_reason, game_id),
+                "UPDATE match_sessions SET state = ?, status = ?, winner = ?, result_reason = ?, "
+                "move_count = move_count + 1 WHERE game_id = ?",
+                (self._dumps({"fen": board.fen()}), game_status, winner, result_reason, game_id),
             )
-
-            cursor.execute(
-                "INSERT INTO web_moves (game_id, move_san, move_uci, player_token) VALUES (?, ?, ?, ?)",
-                (game_id, move_san, move_uci, player_token),
-            )
-
             conn.commit()
             conn.close()
+
+            self.add_event(game_id, player["color"], "move", {"san": move_san, "uci": move_uci})
 
             return {
                 "success": True,
@@ -730,63 +649,6 @@ class ChessGameManager:
             return {"success": False, "error": "Player not found in this game"}
 
         winner = "black" if player["color"] == "white" else "white"
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE web_games SET status = 'finished', winner = ?, result_reason = 'resign' WHERE game_id = ?",
-            (winner, game_id),
-        )
-        conn.commit()
-        conn.close()
+        self.set_status(game_id, "finished", winner=winner, result_reason="resign")
 
         return {"success": True, "winner": winner, "result_reason": "resign"}
-
-    def list_web_games(self):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT game_id, fen, status, move_count, created_at, expires_at, winner, result_reason "
-            "FROM web_games ORDER BY created_at DESC"
-        )
-        rows = cursor.fetchall()
-
-        games = []
-        for row in rows:
-            game = {
-                "game_id": row[0],
-                "status": row[2],
-                "move_count": row[3],
-                "created_at": row[4],
-                "expires_at": row[5],
-                "winner": row[6],
-                "result_reason": row[7],
-            }
-            cursor.execute(
-                "SELECT color FROM web_players WHERE game_id = ? ORDER BY created_at", (row[0],)
-            )
-            players = [p[0] for p in cursor.fetchall()]
-            game["white"] = True if "white" in players else False
-            game["black"] = True if "black" in players else False
-            games.append(game)
-
-        conn.close()
-        return games
-
-    def cleanup_expired_web_games(self):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT game_id FROM web_games WHERE expires_at < datetime('now')")
-        expired = [row[0] for row in cursor.fetchall()]
-
-        for game_id in expired:
-            cursor.execute("DELETE FROM web_moves WHERE game_id = ?", (game_id,))
-            cursor.execute("DELETE FROM web_players WHERE game_id = ?", (game_id,))
-            cursor.execute("DELETE FROM web_join_tokens WHERE game_id = ?", (game_id,))
-            cursor.execute("DELETE FROM web_games WHERE game_id = ?", (game_id,))
-
-        conn.commit()
-        conn.close()
-
-        return len(expired)

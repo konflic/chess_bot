@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Game: %(id)s', id=game_id) }} — CheZZ{% endblock %}
+{% block content %}
+
+{% macro render_board(board, cols, rows, interactive=false, form_id='') %}
+<table class="bs-board">
+    <tr><th></th>{% for c in cols %}<th>{{ c }}</th>{% endfor %}</tr>
+    {% for row in board %}
+    <tr>
+        <th>{{ rows[loop.index0] }}</th>
+        {% for cell in row %}
+        <td class="bs-cell {{ cell.cls }}">
+            {% if interactive and cell.cls == 'unknown' %}
+                <button type="submit" form="{{ form_id }}" name="cell" value="{{ cell.cell }}" class="bs-shoot-btn" aria-label="{{ cell.cell }}"></button>
+            {% else %}
+                <span class="bs-marker">{{ '×' if cell.cls in ('hit', 'sunk') else ('·' if cell.cls == 'miss' else ('◼' if cell.cls == 'ship' else '')) }}</span>
+            {% endif %}
+        </td>
+        {% endfor %}
+    </tr>
+    {% endfor %}
+</table>
+{% endmacro %}
+
+<div class="game-header">
+    <h2>🚢 {{ _('Battleship') }} — {{ game_id }}</h2>
+    {% if game_status == 'waiting' %}
+        <span class="badge badge-waiting">{{ _('Waiting for opponent') }}</span>
+    {% elif game_status == 'placing' %}
+        <span class="badge badge-waiting">{{ _('Place your ships') }}</span>
+    {% elif game_status == 'playing' %}
+        <span class="badge badge-playing">{{ _('Playing') }}</span>
+    {% elif game_status == 'finished' %}
+        <span class="badge badge-finished">{{ _('Finished') }}</span>
+    {% endif %}
+    <span class="time-left">⏱ {{ time_left }}</span>
+</div>
+
+{% if my_side %}
+    <div class="section player-area">
+        <p>{{ _('You play as %(side)s', side=_('Player A') if my_side == 'A' else _('Player B')) }}.</p>
+    </div>
+{% endif %}
+
+{% if msg %}
+    <div class="alert alert-success">{{ _(msg) }}</div>
+{% endif %}
+{% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+{% if game_status == 'waiting' %}
+    <div class="section">
+        <p class="muted">{{ _('Waiting for opponent') }}...</p>
+    </div>
+
+    {% if is_creator %}
+        <div class="section share-box">
+            <p>{{ _('Share this link with a friend to invite them:') }}</p>
+            <div class="copy-row">
+                <input type="text" value="{{ share_link }}" readonly class="input share-input" id="share-link">
+                <button class="btn btn-icon" onclick="copy(this, 'share-link')" aria-label="{{ _('Copy') }}">{{ copyIcon|safe }}</button>
+            </div>
+        </div>
+    {% endif %}
+{% endif %}
+
+{% if game_status == 'placing' and my_side %}
+    {% if my_ready %}
+        <div class="section">
+            <p class="result-win">{{ _('You locked your fleet.') }}</p>
+            {% if opp_ready %}
+                <p class="muted">{{ _('Opponent locked their fleet.') }}</p>
+            {% else %}
+                <p class="muted">{{ _('Waiting for opponent to lock their fleet...') }}</p>
+            {% endif %}
+            <a href="{{ request.url }}" class="btn btn-secondary btn-sm">{{ _('Refresh') }}</a>
+        </div>
+    {% else %}
+        <div class="section">
+            <h3>{{ _('Place your ships') }}</h3>
+            <p class="muted">{{ _('Click a cell to place your ships, then lock the fleet.') }}</p>
+            <div class="place-controls">
+                <span id="bs-place-info" class="muted"></span>
+                <button type="button" id="bs-rotate-btn" class="btn btn-secondary btn-sm">{{ _('Rotate') }}: <span id="bs-orientation">{{ _('Horizontal') }}</span></button>
+            </div>
+            <table class="bs-board bs-placement" id="bs-placement-board" data-remaining="{{ fleet_remaining|tojson }}">
+                <tr><th></th>{% for c in cols %}<th>{{ c }}</th>{% endfor %}</tr>
+                {% for row in rows %}
+                <tr>
+                    <th>{{ row }}</th>
+                    {% for c in cols %}
+                    <td class="bs-cell water" data-cell="{{ c }}{{ row }}"></td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </table>
+            <form action="/battleship/game/{{ game_id }}/lock" method="post" class="move-form">
+                <input type="hidden" name="player_token" value="{{ player_token }}">
+                <input type="hidden" name="fleet" id="bs-fleet-json" value="">
+                <button type="submit" id="bs-lock-btn" class="btn btn-primary" disabled>{{ _('Lock Fleet') }}</button>
+            </form>
+        </div>
+    {% endif %}
+{% endif %}
+
+{% if game_status == 'playing' and my_side %}
+    <div class="section">
+        <h3>{{ _('Enemy board') }}</h3>
+        {% if is_my_turn %}
+            <p class="muted">{{ _('Your turn') }} — {{ _('Click a cell to shoot') }}.</p>
+        {% else %}
+            <p class="muted">{{ _('Waiting for opponent...') }}</p>
+        {% endif %}
+        <form id="bs-shoot-form" method="post" action="/battleship/game/{{ game_id }}/shoot">
+            <input type="hidden" name="player_token" value="{{ player_token }}">
+        </form>
+        {{ render_board(board_enemy, cols, rows, interactive=is_my_turn, form_id='bs-shoot-form') }}
+    </div>
+
+    <div class="section">
+        <h3>{{ _('Your board') }}</h3>
+        {{ render_board(board_my, cols, rows) }}
+    </div>
+{% endif %}
+
+{% if game_status == 'finished' %}
+    <div class="section result-box">
+        {% if result_reason == 'resign' %}
+            {% if winner == my_side %}
+                <p class="result-win">🏆 {{ _('Your opponent gave up — you win!') }}</p>
+            {% elif my_side %}
+                <p class="result-lose">💀 {{ _('You gave up — opponent wins.') }}</p>
+            {% else %}
+                <p class="result-draw">{{ _('Game ended — one player gave up.') }}</p>
+            {% endif %}
+        {% elif winner == my_side %}
+            <p class="result-win">🏆 {{ _('You win!') }}</p>
+        {% elif my_side %}
+            <p class="result-lose">💀 {{ _('You lose!') }}</p>
+        {% else %}
+            <p class="result-draw">{{ _('Game ended — all %(winner)s ships are sunk!', winner=_('Player A') if winner == 'A' else _('Player B')) }}</p>
+        {% endif %}
+    </div>
+
+    {% if my_side %}
+        <div class="section">
+            <h3>{{ _('Enemy board') }}</h3>
+            {{ render_board(board_enemy, cols, rows) }}
+        </div>
+        <div class="section">
+            <h3>{{ _('Your board') }}</h3>
+            {{ render_board(board_my, cols, rows) }}
+        </div>
+    {% endif %}
+{% endif %}
+
+<div class="section moves">
+    <h3>{{ _('Shots') }}</h3>
+    {% if shot_log %}
+        <table class="moves-table">
+            {% for s in shot_log %}
+            <tr>
+                <td class="move-num">{{ loop.index }}.</td>
+                <td class="move-san">{{ s.cell }}</td>
+                <td class="move-color">{{ _(s.result) }}{% if s.sunk %} — {{ _('sunk') }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    {% else %}
+        <p class="muted">{{ _('No shots yet.') }}</p>
+    {% endif %}
+</div>
+
+{% if game_status == 'playing' and my_side %}
+    <div class="section resign-section">
+        <form action="/battleship/game/{{ game_id }}/resign" method="post" onsubmit="return confirm('{{ _("Are you sure you want to give up? The game will be ended and your opponent will win.") }}')">
+            <input type="hidden" name="player_token" value="{{ player_token }}">
+            <button type="submit" class="btn btn-danger">{{ _('Give Up') }}</button>
+        </form>
+    </div>
+{% endif %}
+
+{% if my_side and game_status in ('playing', 'finished') %}
+    <div class="section share-box">
+        <p>{{ _('Spectator link — share so others can watch:') }}</p>
+        <div class="copy-row">
+            <button class="btn btn-icon" onclick="copy(this, 'spec-link')" aria-label="{{ _('Copy') }}">{{ copyIcon|safe }}</button>
+            <input type="text" value="{{ spectator_link }}" readonly class="input share-input" id="spec-link">
+        </div>
+    </div>
+{% endif %}
+
+<script src="/static/battleship.js"></script>
+{% endblock %}

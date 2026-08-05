@@ -347,3 +347,44 @@ docker compose logs -f web
 
 ### Port
 - Web app: `http://localhost:8000`
+
+---
+
+## 12. Shared Game Framework + Battleship (implemented)
+
+The web app was generalized into a small game framework so one-on-one games
+share the same matchmaking flow (create → share invite link → second player
+joins → play → finish, 24h expiry, spectator access).
+
+- `core/game_framework.py` — `GameManager` base class + shared DB tables
+  (`match_sessions`, `match_players`, `match_join_tokens`, `match_events`).
+  Subclasses pick `game_type`, `sides`, `initial_state()` and
+  `status_after_join` and get session/join/events/cleanup for free.
+- `core/game_manager.py` — `ChessGameManager(GameManager)` (game_type `chess`,
+  sides white/black). The old chess `web_*` tables are dropped on startup;
+  games live only 24h so nothing needs migrating.
+- `core/battleship.py` — pure Russian Sea Battle rules (10×10, fleet
+  `[4,3,3,2,2,2,1,1,1,1]`, placement validation, shot resolution, sunk/win).
+- `core/battleship_manager.py` — `BattleshipManager(GameManager)` with the
+  lifecycle `waiting → placing → playing → finished` (both players lock their
+  fleets before shooting starts).
+
+### Routes
+
+| Method | Route | Behavior |
+|--------|-------|----------|
+| GET | `/battleship` | Battleship index — create button |
+| POST | `/battleship/create` | Create game, redirect to player page |
+| GET | `/battleship/game/{game_id}` | Game page (player or spectator) |
+| GET | `/battleship/game/{game_id}/join?token=` | Join confirmation |
+| POST | `/battleship/game/{game_id}/join` | Join as Player B → `placing` |
+| POST | `/battleship/game/{game_id}/lock` | Validate + store fleet, mark ready; both ready → `playing` |
+| POST | `/battleship/game/{game_id}/shoot` | Fire at a cell; hit = shoot again |
+| POST | `/battleship/game/{game_id}/resign` | Resign |
+
+Client-side ship placement lives in `web/static/battleship.js`; the placement
+grid hands the complete fleet to `/lock` as JSON, which the server validates
+(`validate_fleet`) before storing.
+
+The home page (`/`) and `/battleship` are linked via a nav bar in
+`templates/base.html`.

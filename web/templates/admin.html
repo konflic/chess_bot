@@ -9,9 +9,10 @@
         <table class="moves-table">
             <tr>
                 <th>ID</th>
+                <th>Game</th>
                 <th>Status</th>
-                <th>W</th>
-                <th>B</th>
+                <th>P1</th>
+                <th>P2</th>
                 <th>Moves</th>
                 <th>Result</th>
                 <th>Created</th>
@@ -19,10 +20,11 @@
             </tr>
             {% for g in games %}
             <tr>
-                <td><a href="/game/{{ g.game_id }}" style="font-family:monospace">{{ g.game_id }}</a></td>
+                <td><a href="{% if g.game_type == 'battleship' %}/battleship/game/{% else %}/game/{% endif %}{{ g.game_id }}" style="font-family:monospace">{{ g.game_id }}</a></td>
+                <td>{{ g.game_type }}</td>
                 <td>{{ g.status }}</td>
-                <td>{{ '✓' if g.white else '' }}</td>
-                <td>{{ '✓' if g.black else '' }}</td>
+                <td>{{ '✓' if g.players.get('white') or g.players.get('A') else '' }}</td>
+                <td>{{ '✓' if g.players.get('black') or g.players.get('B') else '' }}</td>
                 <td>{{ g.move_count }}</td>
                 <td>
                     {% if g.winner %}
