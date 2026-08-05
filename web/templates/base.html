@@ -17,7 +17,7 @@
                 <button class="icon-btn" id="themeToggle" onclick="toggleTheme()">🌙</button>
             </div>
         </div>
-        <nav class="game-nav" {% if nav == 'home' %}style="display:none"{% endif %}>
+        <nav class="game-nav" {% if nav != 'home' %}style="display:none"{% endif %}>
             <a href="/chess" class="{{ 'active' if nav == 'chess' else '' }}">♟ {{ _('Chess') }}</a>
             <a href="/battleship" class="{{ 'active' if nav == 'battleship' else '' }}">🚢 {{ _('Battleship') }}</a>
         </nav>

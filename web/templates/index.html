@@ -5,8 +5,12 @@
     <p class="subtitle">{{ _('Choose a game') }}</p>
 
     <div class="game-list">
-        <a href="/chess" class="game-card">{{ _('Chess') }}</a>
-        <a href="/battleship" class="game-card">{{ _('Battleship') }}</a>
+        <form action="/games/create" method="post">
+            <button type="submit" class="game-card">{{ _('Chess') }}</button>
+        </form>
+        <form action="/battleship/create" method="post">
+            <button type="submit" class="game-card">{{ _('Battleship') }}</button>
+        </form>
     </div>
 </div>
 {% endblock %}
