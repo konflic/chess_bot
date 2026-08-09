@@ -7,7 +7,7 @@ import chess
 import chess.svg
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
@@ -15,6 +15,7 @@ from core import battleship
 from core.battleship_manager import BattleshipManager
 from core.game_manager import ChessGameManager
 from configuration import APP_VERSION
+from web.realtime import ConnectionManager, sse_format
 
 LOCALES = {"en", "ru"}
 
@@ -141,6 +142,7 @@ HERE = os.path.dirname(__file__)
 
 gm = ChessGameManager()
 bsm = BattleshipManager()
+rtm = ConnectionManager()
 
 
 COPY_ICON_SVG = (
@@ -186,9 +188,41 @@ app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="
 async def _cleanup_loop():
     while True:
         await asyncio.sleep(300)
+        expired_ids = [g["game_id"] for g in gm.list_games() if _is_expired(g["expires_at"])]
         deleted = gm.cleanup_expired()
         if deleted:
             print(f"[cleanup] removed {deleted} expired game(s)")
+        for game_id in expired_ids:
+            if rtm.subscribers(game_id):
+                await rtm.close_game(game_id)
+                print(f"[cleanup] closed live stream for {game_id}")
+
+
+def _is_expired(expires_at: str) -> bool:
+    return datetime.datetime.fromisoformat(expires_at) < datetime.datetime.utcnow()
+
+
+@app.get("/events/game/{game_id}")
+async def game_events(request: Request, game_id: str):
+    queue = rtm.connect(game_id)
+
+    async def gen():
+        try:
+            yield "retry: 3000\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=20)
+                    yield sse_format(event)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            rtm.disconnect(game_id, queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
 
 
 def _render_svg(fen: str) -> str:
@@ -309,6 +343,7 @@ async def join_game(request: Request, game_id: str, join_token: str = Form(...))
             url=f"/game/{game_id}/join?token={join_token}&error={err}",
             status_code=303,
         )
+    await rtm.notify(game_id, {"type": "update", "game_id": game_id, "reason": "join"})
     return RedirectResponse(
         url=f"/game/{game_id}?player={black_token}",
         status_code=303,
@@ -323,6 +358,7 @@ async def resign_game(
 ):
     result = gm.resign_web_game(game_id, player_token)
     if result["success"]:
+        await rtm.notify(game_id, {"type": "update", "game_id": game_id, "reason": "resign"})
         return RedirectResponse(
             url=f"/game/{game_id}?player={player_token}&msg=You+gave+up",
             status_code=303,
@@ -354,6 +390,7 @@ async def make_move(
 ):
     result = gm.make_web_move(game_id, player_token, move)
     if result["success"]:
+        await rtm.notify(game_id, {"type": "update", "game_id": game_id, "reason": "move"})
         return RedirectResponse(
             url=f"/game/{game_id}?player={player_token}",
             status_code=303,
@@ -536,6 +573,7 @@ async def battleship_join(request: Request, game_id: str, join_token: str = Form
             url=_bs_flash(f"/battleship/game/{game_id}/join", token=join_token, error=err),
             status_code=303,
         )
+    await rtm.notify(game_id, {"type": "update", "game_id": game_id, "reason": "join"})
     return RedirectResponse(
         url=f"/battleship/game/{game_id}?player={token}",
         status_code=303,
@@ -559,6 +597,7 @@ async def battleship_lock(
 
     result = bsm.submit_fleet(game_id, player_token, ships)
     if result["success"]:
+        await rtm.notify(game_id, {"type": "update", "game_id": game_id, "reason": "lock"})
         return RedirectResponse(
             url=_bs_flash(f"/battleship/game/{game_id}", player=player_token, msg="fleet_locked"),
             status_code=303,
@@ -578,6 +617,7 @@ async def battleship_shoot(
 ):
     result = bsm.make_shot(game_id, player_token, cell)
     if result["success"]:
+        await rtm.notify(game_id, {"type": "update", "game_id": game_id, "reason": "shoot"})
         if result.get("ships_left") == 0:
             msg = "shot_win"
         else:
@@ -600,6 +640,7 @@ async def battleship_resign(
 ):
     result = bsm.resign(game_id, player_token)
     if result["success"]:
+        await rtm.notify(game_id, {"type": "update", "game_id": game_id, "reason": "resign"})
         return RedirectResponse(
             url=_bs_flash(f"/battleship/game/{game_id}", player=player_token, msg="gave_up"),
             status_code=303,

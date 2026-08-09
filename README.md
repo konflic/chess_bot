@@ -6,11 +6,13 @@ Play chess or battleship with friends in a web browser.
 
 - Chess over the web — move input, SVG board, spectators
 - Battleship ("Sea Battle") over the web — click-to-place fleets, turn-based shooting
+- Live updates (SSE) — the opponent's move appears instantly, no manual refresh
 - Invite links for joining games (creator gets a link, friend joins as second player)
 - Multilingual (English, Russian)
 - Games auto-expire after 24 hours
 - SQLite storage
 - Shared game framework (`core/game_framework.py`) — easy to add more one-on-one games
+- Versioned test suite in `tests/` (`python tests/run_all.py`)
 
 ## Quick Start with Docker
 
@@ -45,7 +47,7 @@ Open http://localhost:8000 — the app works immediately.
 3. Share the invite link with a friend
 4. Friend opens the link and clicks **Join as Black**
 5. Take turns typing moves (e.g. `e2e4`, `Nf3`, `O-O`)
-6. Click **↻ Refresh** to see the latest board
+6. The board updates live — no need to click **↻ Refresh**
 
 ### Battleship
 
@@ -56,6 +58,7 @@ Open http://localhost:8000 — the app works immediately.
 5. Both players place their 10-ship fleet on a 10×10 grid (click a cell, use **Rotate** to flip orientation), then **Lock Fleet**
 6. Once both fleets are locked, take turns shooting the enemy board — a hit lets you shoot again
 7. Sink all enemy ships to win
+8. Shots appear live — no manual refresh needed
 
 ## Project Structure
 
@@ -69,13 +72,31 @@ chess_bot/
 │   └── constants.py
 ├── web/                         # FastAPI web app
 │   ├── main.py                  # Routes (chess + battleship)
+│   ├── realtime.py              # SSE connection manager (live updates)
 │   ├── templates/               # Jinja2 HTML templates
-│   └── static/                  # CSS, battleship.js
-├── configuration.py             # App version, paths
+│   └── static/                  # CSS, battleship.js, realtime.js
+├── tests/                       # Plain-assert test suite
+│   ├── run_all.py               # Runs every test module as an isolated subprocess
+│   ├── core_rules.py            # Battleship pure rules
+│   ├── managers.py              # Chess + battleship manager flows
+│   ├── web_e2e.py               # HTTP end-to-end (chess + battleship + locale)
+│   ├── framework_shared.py      # Shared matchmaking invariants for all game types
+│   └── realtime_sse.py          # SSE live-update checks (real uvicorn subprocess)
+├── configuration.py             # App version, paths (GAMES_DB env-overridable)
 ├── requirements.txt
 ├── docker-compose.yaml
 └── Dockerfile
 ```
+
+## Testing
+
+```bash
+./venv/bin/python tests/run_all.py
+```
+
+Runs the whole suite: core rules, manager flows, HTTP end-to-end, shared
+framework invariants, and live SSE delivery. Each module owns a temp SQLite DB
+and runs in its own subprocess, so tests stay isolated.
 
 ## Releasing
 

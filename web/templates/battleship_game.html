@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Game: %(id)s', id=game_id) }} — GameZZ{% endblock %}
+{% block body_attrs %} data-game-id="{{ game_id }}"{% endblock %}
 {% block content %}
 
 {% macro render_board(board, cols, rows, interactive=false, form_id='') %}
