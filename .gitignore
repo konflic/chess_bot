@@ -6,3 +6,6 @@ __pycache__/
 TOKEN
 venv/
 tmp/*
+
+# Local agent notes (contains deploy host details)
+AGENTS.md
